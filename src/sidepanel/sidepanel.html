@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Chat IA</title>
+    <link rel="stylesheet" href="sidepanel.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <img src="../../icons/icon32.png" alt="" width="20" height="20" />
+        <span id="chat-title">Nova conversa</span>
+      </div>
+      <div class="actions">
+        <button id="btn-new" class="icon-btn" title="Nova conversa" aria-label="Nova conversa">
+          <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></svg>
+        </button>
+        <button id="btn-history" class="icon-btn" title="Histórico" aria-label="Histórico">
+          <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" /><path d="M12 7v5l3 3" /></svg>
+        </button>
+        <button id="btn-settings" class="icon-btn" title="Configurações" aria-label="Configurações">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" /></svg>
+        </button>
+      </div>
+    </header>
+
+    <main id="messages" class="messages" aria-live="polite">
+      <section id="welcome" class="welcome">
+        <img src="../../icons/icon128.png" alt="" width="56" height="56" />
+        <h1>Como posso ajudar?</h1>
+        <p class="muted">Escolha o modelo abaixo e converse. Ative <b>Usar página</b> para incluir o conteúdo da aba atual.</p>
+        <div class="suggestions">
+          <button class="suggestion" data-page="1" data-prompt="Resuma esta página em tópicos, destacando os pontos principais.">📄 Resumir esta página</button>
+          <button class="suggestion" data-page="1" data-prompt="Quais são as principais conclusões e dados importantes desta página?">🔎 Extrair pontos-chave</button>
+          <button class="suggestion" data-page="1" data-prompt="Traduza o conteúdo principal desta página para português do Brasil.">🌐 Traduzir a página</button>
+          <button class="suggestion" data-prompt="Me ajude a escrever um e-mail profissional sobre: ">✉️ Escrever um e-mail</button>
+        </div>
+      </section>
+    </main>
+
+    <footer class="composer">
+      <div id="context-chip" class="context-chip hidden">
+        <span id="context-chip-text"></span>
+        <button id="context-chip-clear" class="chip-x" title="Remover" aria-label="Remover contexto">×</button>
+      </div>
+      <div class="input-box">
+        <textarea id="input" rows="1" placeholder="Pergunte qualquer coisa…"></textarea>
+        <div class="input-bar">
+          <div class="left">
+            <label class="toggle" title="Enviar título, URL e texto da aba atual junto com a mensagem">
+              <input type="checkbox" id="use-page" />
+              <span>Usar página</span>
+            </label>
+            <select id="model-select" title="Modelo"></select>
+          </div>
+          <button id="btn-send" class="send-btn" title="Enviar" aria-label="Enviar">
+            <svg class="i-send" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7" /></svg>
+            <svg class="i-stop" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="1.5" /></svg>
+          </button>
+        </div>
+      </div>
+      <p class="disclaimer">A IA pode cometer erros. Confira informações importantes.</p>
+    </footer>
+
+    <aside id="history" class="drawer hidden" aria-label="Histórico">
+      <div class="drawer-head">
+        <strong>Histórico</strong>
+        <button id="history-close" class="icon-btn" aria-label="Fechar">
+          <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" /></svg>
+        </button>
+      </div>
+      <input id="history-search" type="search" placeholder="Buscar conversas…" />
+      <ul id="history-list"></ul>
+    </aside>
+
+    <script type="module" src="sidepanel.js"></script>
+  </body>
+</html>

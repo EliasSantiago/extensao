@@ -1,0 +1,41 @@
+{
+  "manifest_version": 3,
+  "name": "Chat IA — Multi-LLM",
+  "short_name": "Chat IA",
+  "version": "1.0.0",
+  "description": "Converse com OpenAI, Claude, Gemini e modelos locais (Ollama, LM Studio, vLLM) em um painel lateral do Chrome.",
+  "minimum_chrome_version": "116",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_title": "Abrir Chat IA",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png"
+    }
+  },
+  "side_panel": {
+    "default_path": "src/sidepanel/sidepanel.html"
+  },
+  "options_page": "src/options/options.html",
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+  "permissions": ["sidePanel", "storage", "contextMenus", "scripting", "activeTab", "tabs"],
+  "host_permissions": ["<all_urls>"],
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+E",
+        "mac": "Command+Shift+E"
+      },
+      "description": "Abrir o Chat IA"
+    }
+  }
+}
