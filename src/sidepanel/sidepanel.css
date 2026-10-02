@@ -77,7 +77,8 @@ textarea:focus-visible, input:focus-visible { outline: none; }
   background: var(--white);
   color: var(--black);
 }
-.mark svg { width: 26px; height: 26px; stroke-width: 1.8; }
+.mark svg { width: 28px; height: 28px; }
+.mark .hollow { fill: var(--white); }
 .welcome h1 {
   margin: 0;
   font-size: 22px;
@@ -158,7 +159,14 @@ textarea:focus-visible, input:focus-visible { outline: none; }
   background: var(--white);
   color: var(--black);
 }
-.avatar svg { width: 15px; height: 15px; stroke-width: 1.8; }
+.avatar svg { width: 17px; height: 17px; }
+.avatar .hollow { fill: var(--white); }
+/* Nós da marca acendem em sequência enquanto o agente trabalha */
+.msg.working .avatar circle { animation: node 1.2s ease-in-out infinite; }
+.msg.working .avatar .n2 { animation-delay: .15s; }
+.msg.working .avatar .n3 { animation-delay: .3s; }
+.msg.working .avatar .n4 { animation-delay: .45s; }
+@keyframes node { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
 .msg.assistant .meta b { color: var(--text); font-weight: 600; }
 .msg.assistant .meta .prov::before { content: "·"; margin-right: 8px; }
 .msg.assistant .turn-body { padding-left: 32px; }
@@ -234,6 +242,10 @@ textarea:focus-visible, input:focus-visible { outline: none; }
   word-break: break-word;
 }
 .step-out:empty { display: none; }
+.step.has-shot .step-out { display: none; }
+.step-shot:empty { display: none; }
+.step-shot { padding: 8px 10px 10px; border-top: 1px dashed var(--line); background: var(--black); }
+.step-shot img { display: block; max-width: 100%; max-height: 170px; margin: 0 auto; object-fit: contain; border: 1px solid var(--line); border-radius: 8px; }
 
 .dots { display: inline-flex; gap: 4px; padding: 6px 0; }
 .dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--text-2); animation: pulse 1.2s infinite ease-in-out; }

@@ -159,6 +159,7 @@ function fillGeneral() {
   $('#pageCharLimit').value = settings.pageCharLimit;
   $('#sendWithEnter').checked = !!settings.sendWithEnter;
   $('#agentMode').checked = settings.agentMode !== false;
+  $('#agentVision').checked = settings.agentVision !== false;
   $('#maxSteps').value = settings.maxSteps || 25;
 }
 
@@ -172,6 +173,7 @@ async function save() {
   settings.pageCharLimit = numOrNull($('#pageCharLimit').value) || DEFAULT_SETTINGS.pageCharLimit;
   settings.sendWithEnter = $('#sendWithEnter').checked;
   settings.agentMode = $('#agentMode').checked;
+  settings.agentVision = $('#agentVision').checked;
   settings.maxSteps = Math.min(Math.max(numOrNull($('#maxSteps').value) || 25, 1), 100);
 
   await saveSettings(settings);

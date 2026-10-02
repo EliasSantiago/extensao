@@ -130,3 +130,51 @@ test('rótulos das ações do agente', () => {
     assert.ok(t.description.length > 20, t.name);
   }
 });
+
+// ---------------------------------------------------------------- capturas de tela
+const IMG = { mediaType: 'image/jpeg', data: 'QUJD' };
+const shotHistory = [
+  { role: 'user', content: 'veja a página' },
+  { role: 'assistant', content: '', toolCalls: [{ id: 's1', name: 'screenshot', args: {} }] },
+  { role: 'tool', toolCallId: 's1', name: 'screenshot', content: 'Captura de tela (1280x800px)', image: IMG }
+];
+
+test('openai: captura vai numa mensagem de usuário com image_url após o resultado', async () => {
+  const calls = mockFetch(['data: [DONE]\n\n']);
+  await chatTurn({ providerId: 'openai', config: { apiKey: 'k' }, model: 'gpt-4o-mini', messages: shotHistory, tools });
+  const m = calls[0].body.messages;
+  assert.equal(m[2].role, 'tool');
+  assert.equal(m[3].role, 'user');
+  assert.equal(m[3].content[1].image_url.url, 'data:image/jpeg;base64,QUJD');
+});
+
+test('anthropic: captura dentro do tool_result', async () => {
+  const calls = mockFetch(['data: {"type":"message_stop"}\n\n']);
+  await chatTurn({ providerId: 'anthropic', config: { apiKey: 'k' }, model: 'm', messages: shotHistory, tools });
+  const tr = calls[0].body.messages[2].content[0];
+  assert.equal(tr.type, 'tool_result');
+  assert.deepEqual(tr.content[1], { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: 'QUJD' } });
+});
+
+test('gemini: captura como inlineData junto da functionResponse', async () => {
+  const calls = mockFetch(['data: {"candidates":[]}\n\n']);
+  await chatTurn({ providerId: 'gemini', config: { apiKey: 'g' }, model: 'gemini-2.5-flash', messages: shotHistory, tools });
+  const parts = calls[0].body.contents[2].parts;
+  assert.ok(parts[0].functionResponse);
+  assert.deepEqual(parts[1], { inlineData: { mimeType: 'image/jpeg', data: 'QUJD' } });
+});
+
+test('ollama: captura em "images" numa mensagem de usuário', async () => {
+  const calls = mockFetch(['{"done":true}\n']);
+  await chatTurn({ providerId: 'ollama', config: {}, model: 'qwen2.5vl', messages: shotHistory, tools });
+  const m = calls[0].body.messages;
+  assert.equal(m[2].role, 'tool');
+  assert.deepEqual(m[3].images, ['QUJD']);
+});
+
+test('detecta modelo sem visão', async () => {
+  const { isVisionUnsupportedError } = await import('../src/lib/providers.js');
+  assert.equal(isVisionUnsupportedError(Object.assign(new Error('HTTP 400: Image input is not supported for this model'), { status: 400 })), true);
+  assert.equal(isVisionUnsupportedError(Object.assign(new Error('HTTP 400: model does not support images'), { status: 400 })), true);
+  assert.equal(isVisionUnsupportedError(Object.assign(new Error('HTTP 429: rate limit'), { status: 429 })), false);
+});

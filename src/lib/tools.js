@@ -48,8 +48,32 @@ export const BROWSER_TOOLS = [
     }
   },
   {
+    name: 'screenshot',
+    description:
+      'Tira uma captura de tela da área visível da aba controlada e a envia para você analisar. Os elementos clicáveis aparecem ' +
+      'com marcadores amarelos numerados — os mesmos números [n] usados em click/type. Use para entender o layout, ver imagens, ' +
+      'cores, preços em destaque, pop-ups ou quando o texto de read_page não for suficiente.',
+    parameters: {
+      type: 'object',
+      properties: { marks: { type: 'boolean', description: 'Desenhar os marcadores numerados (padrão true).' } }
+    }
+  },
+  {
+    name: 'click_at',
+    description:
+      'Clica num ponto da última captura de tela, em pixels da imagem (x da esquerda, y do topo). Use só quando o alvo não tiver marcador [n].',
+    parameters: {
+      type: 'object',
+      properties: {
+        x: { type: 'number', description: 'Coordenada x na captura.' },
+        y: { type: 'number', description: 'Coordenada y na captura.' }
+      },
+      required: ['x', 'y']
+    }
+  },
+  {
     name: 'click',
-    description: 'Clica em um elemento pela referência [n] obtida em read_page/find.',
+    description: 'Clica em um elemento pela referência [n] obtida em read_page/find/screenshot.',
     parameters: {
       type: 'object',
       properties: { ref: { type: 'integer', description: 'Número da referência do elemento.' } },
@@ -160,6 +184,10 @@ export function describeToolCall(call) {
       return { icon: 'magnifying-glass', label: `Procurando “${short(a.query)}”` };
     case 'click':
       return { icon: 'cursor-arrow-rays', label: `Clicando no elemento [${a.ref}]` };
+    case 'screenshot':
+      return { icon: 'camera', label: 'Capturando a tela' };
+    case 'click_at':
+      return { icon: 'viewfinder-circle', label: `Clicando no ponto (${Math.round(a.x)}, ${Math.round(a.y)})` };
     case 'type':
       return { icon: 'pencil', label: `Digitando “${short(a.text, 36)}”${a.submit ? ' e enviando' : ''}` };
     case 'select_option':
@@ -439,6 +467,51 @@ function nexoPageAgent(action, params) {
       return { ok: true };
     }
 
+    case 'marks': {
+      const id = '__nexo_agent_marks';
+      document.getElementById(id)?.remove();
+      if (!params.on) return { ok: true, vw: innerWidth, vh: innerHeight };
+      const layer = document.createElement('div');
+      layer.id = id;
+      layer.style.cssText = 'position:fixed;inset:0;z-index:2147483646;pointer-events:none;';
+      const { lines } = interactive(400);
+      const shown = [];
+      for (const el of document.querySelectorAll('[data-nexo-ref]')) {
+        if (shown.length >= 90 || !visible(el) || !inView(el)) continue;
+        const r = el.getBoundingClientRect();
+        const box = document.createElement('div');
+        box.style.cssText = `position:fixed;left:${r.left}px;top:${r.top}px;width:${r.width}px;height:${r.height}px;` +
+          'outline:2px solid #ffd400;outline-offset:-1px;border-radius:3px;';
+        const tag = document.createElement('div');
+        tag.textContent = el.dataset.nexoRef;
+        tag.style.cssText = `position:fixed;left:${Math.max(0, r.left - 2)}px;top:${Math.max(0, r.top - 14)}px;` +
+          'padding:0 4px;background:#ffd400;color:#000;font:700 11px/14px system-ui,sans-serif;border-radius:3px;';
+        layer.append(box, tag);
+        shown.push(el.dataset.nexoRef);
+      }
+      document.documentElement.appendChild(layer);
+      const legend = lines.filter((l) => shown.includes(l.match(/^\[(\d+)\]/)?.[1]));
+      return { ok: true, vw: innerWidth, vh: innerHeight, text: legend.join('\n') };
+    }
+
+    case 'click_at': {
+      const x = Number(params.x);
+      const y = Number(params.y);
+      const el = document.elementFromPoint(x, y);
+      if (!el) return { ok: false, error: `Nada encontrado no ponto (${Math.round(x)}, ${Math.round(y)}) da área visível.` };
+      const target = el.closest(SELECTOR) || el;
+      if (target.tagName === 'A' && target.target === '_blank') target.target = '_self';
+      const coords = { clientX: x, clientY: y, button: 0 };
+      fire(el, 'pointerover', PointerEvent, coords);
+      fire(el, 'pointerdown', PointerEvent, coords);
+      fire(el, 'mousedown', MouseEvent, coords);
+      if (target.focus) target.focus({ preventScroll: true });
+      fire(el, 'pointerup', PointerEvent, coords);
+      fire(el, 'mouseup', MouseEvent, coords);
+      el.click();
+      return { ok: true, text: `Clicado no ponto (${Math.round(x)}, ${Math.round(y)}): ${describe(target)}` };
+    }
+
     case 'overlay': {
       const id = '__nexo_agent_overlay';
       document.getElementById(id)?.remove();
@@ -468,6 +541,22 @@ function nexoPageAgent(action, params) {
 // ---------------------------------------------------------------------------
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** Reduz uma imagem (data URL) e devolve { data(base64), width, height } em JPEG. */
+async function downscale(dataUrl, maxWidth) {
+  const blob = await (await fetch(dataUrl)).blob();
+  const bitmap = await createImageBitmap(blob);
+  const scale = Math.min(1, maxWidth / bitmap.width);
+  const width = Math.round(bitmap.width * scale);
+  const height = Math.round(bitmap.height * scale);
+  const canvas = new OffscreenCanvas(width, height);
+  canvas.getContext('2d').drawImage(bitmap, 0, 0, width, height);
+  const out = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.72 });
+  const bytes = new Uint8Array(await out.arrayBuffer());
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return { data: btoa(bin), width, height };
+}
 
 function normalizeUrl(url) {
   const u = String(url || '').trim();
@@ -543,17 +632,66 @@ export class BrowserAgent {
     }
   }
 
+  /** Captura a área visível da aba (com marcadores opcionais) reduzida para no máx. 1280px de largura. */
+  async screenshot({ marks = true } = {}) {
+    let tab = await this.tab();
+    if (!tab.active) {
+      await chrome.tabs.update(tab.id, { active: true });
+      await sleep(350);
+      tab = await this.tab();
+    }
+    let info = { vw: null, vh: null, text: '' };
+    const scriptable = isScriptable(tab.url);
+    if (scriptable) {
+      await this.overlay(false);
+      if (marks) info = await this.inject('marks', { on: true });
+      else info = await this.inject('marks', { on: false });
+      await sleep(120);
+    }
+    let dataUrl;
+    try {
+      dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg', quality: 75 });
+    } finally {
+      if (scriptable) {
+        await this.inject('marks', { on: false }).catch(() => {});
+        await this.overlay(true);
+      }
+    }
+    const image = await downscale(dataUrl, 1280);
+    this.lastShot = { width: image.width, height: image.height, vw: info.vw || image.width, vh: info.vh || image.height };
+    const text =
+      `Captura de tela (${image.width}x${image.height}px) de ${tab.url}\nTítulo: ${tab.title}\n` +
+      (marks && info.text ? `\n## Marcadores visíveis — use o número em click/type\n${info.text}` : '');
+    return { content: text, image: { mediaType: 'image/jpeg', data: image.data } };
+  }
+
   async goTo(url) {
     const tab = await this.tab();
     await chrome.tabs.update(tab.id, { url: normalizeUrl(url) });
     await this.settle(tab.id, { navigated: true });
   }
 
-  /** Executa uma chamada de ferramenta e devolve o texto do resultado. */
+  /** Executa uma chamada de ferramenta e devolve { content, image? }. */
   async run(call) {
     const a = call.args || {};
     let out;
     switch (call.name) {
+      case 'screenshot':
+        return this.screenshot({ marks: a.marks !== false });
+      case 'click_at': {
+        const before = await this.tab();
+        const shot = this.lastShot;
+        // converte pixels da captura para pixels CSS da página
+        const sx = shot ? shot.vw / shot.width : 1;
+        const sy = shot ? shot.vh / shot.height : 1;
+        const res = await this.inject('click_at', { x: Number(a.x) * sx, y: Number(a.y) * sy });
+        await this.settle(before.id);
+        const after = await this.tab();
+        out = after.url !== before.url
+          ? `${res.text}\nA página mudou.\n\n${await this.snapshot('all', 5000)}`
+          : `${res.text}\n(URL não mudou). Use screenshot ou read_page para ver o novo estado.`;
+        break;
+      }
       case 'navigate': {
         const tab = await this.tab();
         if (a.url === 'back' || a.url === 'forward') {
@@ -642,16 +780,17 @@ export class BrowserAgent {
       default:
         throw new Error(`Ferramenta desconhecida: ${call.name}`);
     }
-    return out.length > MAX_RESULT_CHARS ? `${out.slice(0, MAX_RESULT_CHARS)}\n[…resultado truncado…]` : out;
+    return { content: out.length > MAX_RESULT_CHARS ? `${out.slice(0, MAX_RESULT_CHARS)}\n[…resultado truncado…]` : out };
   }
 }
 
 export const AGENT_INSTRUCTIONS = `
 # Navegação e ferramentas
-Você controla o navegador Chrome do usuário por meio de ferramentas (navigate, search_web, read_page, find, click, type, select_option, press_key, scroll, wait, list_tabs, switch_tab, new_tab).
+Você controla o navegador Chrome do usuário por meio de ferramentas (navigate, search_web, read_page, find, screenshot, click, click_at, type, select_option, press_key, scroll, wait, list_tabs, switch_tab, new_tab).
 - Sempre que o pedido envolver sites, pesquisas, compras, preços, avaliações, notícias ou informações atuais, USE as ferramentas. Nunca diga que não consegue acessar sites ou navegar.
 - Fluxo típico: navigate (ou search_web) → leia o retrato da página → find/read_page → click/type → repita até concluir.
 - Use apenas referências [n] do retrato mais recente. Se um elemento não for encontrado, chame read_page de novo.
+- Quando disponível, use screenshot para VER a página: ela mostra marcadores amarelos com os números [n] dos elementos clicáveis. Tire uma captura ao chegar numa página nova importante, quando o layout/imagens importarem, quando algo não funcionar como esperado e para conferir o resultado de ações. Use click_at (coordenadas da captura) só para alvos sem marcador.
 - Para buscar dentro de um site, prefira a caixa de busca do próprio site (type com submit=true) ou uma URL de busca do site.
 - Se aparecer pop-up, banner de cookies ou modal, feche-o (click em "Fechar", "Aceitar", "X" ou press_key Escape).
 - Use scroll para carregar mais resultados. Compare opções e abra páginas de produtos para ver detalhes e avaliações quando necessário.

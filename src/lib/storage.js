@@ -27,6 +27,7 @@ export const DEFAULT_SETTINGS = {
   maxTokens: null,
   pageCharLimit: 30000,
   agentMode: true,
+  agentVision: true,
   maxSteps: 25,
   sendWithEnter: true
 };

@@ -11,7 +11,7 @@ direto do navegador, escolhendo o modelo a cada mensagem e usando a página aber
 
 ## Funcionalidades
 
-- 🤖 **Modo agente (navegação)**: a IA controla a aba do Chrome — abre sites, pesquisa no Google, lê a página, clica, digita, escolhe opções, rola e troca de abas — até concluir a tarefa (ex.: “entre na Shein e busque camisas masculinas premium com material elogiado”). Cada ação aparece no chat e pode ser expandida; a aba controlada ganha um contorno branco. Pede confirmação antes de compras, pagamentos, envios e logins.
+- 🤖 **Modo agente (navegação)**: a IA controla a aba do Chrome — abre sites, pesquisa no Google, lê a página, clica, digita, escolhe opções, rola e troca de abas — até concluir a tarefa (ex.: “entre na Shein e busque camisas masculinas premium com material elogiado”). Com **capturas de tela (visão)**, o agente vê a página com marcadores amarelos numerados sobre os elementos clicáveis e pode clicar por número ou por coordenada. Cada ação aparece no chat e pode ser expandida (as capturas aparecem em miniatura); a aba controlada ganha um contorno branco. Pede confirmação antes de compras, pagamentos, envios e logins.
 - 💬 Chat em **painel lateral** com respostas em tempo real (streaming), botão de parar e **regenerar**.
 - 🔀 **Seletor de modelo** com busca e teclado, agrupado por provedor (nuvem/local); troque de modelo no meio da conversa.
 - 🔎 **Buscar modelos** direto da API de cada provedor, ou digitar nomes manualmente.
@@ -67,7 +67,7 @@ LocalAI `CORS=true`, llama.cpp server já libera por padrão) ou coloque um prox
 - Escolha o modelo no seletor embaixo da caixa de mensagem (dá para digitar para filtrar e usar ↑/↓/Enter) e escreva (**Enter** envia, **Shift+Enter** quebra linha).
 - Para o modelo ler a aba atual, use os atalhos da tela inicial ou mencione a página na pergunta (ex.: “resuma esta página”, “qual o preço neste site?”). Não funciona em páginas `chrome://` nem na Chrome Web Store.
 - Peça tarefas na web em linguagem natural: “pesquise o preço do iPhone 16 em 3 lojas”, “entre no site X e encontre o telefone de contato”, “abra o primeiro resultado e resuma”. O agente trabalha na aba ativa da janela; clique em ■ para parar a qualquer momento.
-- O modo agente funciona com modelos que suportam *tool calling*: GPT‑4o/4.1/5, Claude, Gemini 2.x e modelos locais como Qwen 2.5/3, Llama 3.1+ e Mistral (Ollama/LM Studio/vLLM). Modelos sem suporte respondem só com texto (o Nexo detecta e avisa). Dá para desligar o modo agente e ajustar o limite de passos nas configurações.
+- O modo agente funciona com modelos que suportam *tool calling*: GPT‑4o/4.1/5, Claude, Gemini 2.x e modelos locais como Qwen 2.5/3, Llama 3.1+ e Mistral (Ollama/LM Studio/vLLM). Modelos sem suporte respondem só com texto (o Nexo detecta e avisa). As capturas de tela exigem modelo com visão (GPT‑4o/4.1/5, Claude, Gemini, Qwen2.5‑VL/Llama 3.2 Vision locais); sem visão, o agente segue só com o texto da página. Dá para desligar o modo agente, as capturas e ajustar o limite de passos nas configurações.
 - Selecione um texto em qualquer site → botão direito → **Nexo** → escolha a ação.
 - **+** inicia nova conversa; o relógio abre o histórico.
 - Passe o mouse sobre uma resposta para **Copiar** ou **Regenerar** (com o modelo selecionado no momento — útil para comparar modelos).

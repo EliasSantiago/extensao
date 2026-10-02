@@ -1,4 +1,4 @@
-import { PROVIDERS, PROVIDER_ORDER, modelsFor, displayName, chatTurn, isToolsUnsupportedError } from '../lib/providers.js';
+import { PROVIDERS, PROVIDER_ORDER, modelsFor, displayName, chatTurn, isToolsUnsupportedError, isVisionUnsupportedError } from '../lib/providers.js';
 import { BROWSER_TOOLS, BrowserAgent, AGENT_INSTRUCTIONS, describeToolCall } from '../lib/tools.js';
 import { getSettings, updateSettings, listConversations, saveConversation, deleteConversation, newId } from '../lib/storage.js';
 import { renderMarkdown } from '../lib/markdown.js';
@@ -409,18 +409,33 @@ async function send({ tabId } = {}) {
 // ---------------------------------------------------------------------------
 
 /** Histórico no formato unificado dos provedores (resultados antigos de ferramentas resumidos). */
-function apiHistory(messages) {
+function apiHistory(messages, { images = true } = {}) {
   const list = messages.filter((m) => !m.error && !(m.role === 'assistant' && !m.content && !m.toolCalls?.length));
   const toolIdx = list.map((m, i) => (m.role === 'tool' ? i : -1)).filter((i) => i >= 0);
   const recent = new Set(toolIdx.slice(-3));
+  const lastImage = images ? list.map((m, i) => (m.role === 'tool' && m.image ? i : -1)).filter((i) => i >= 0).pop() : -1;
   return list.map((m, i) => {
     if (m.role === 'user') return { role: 'user', content: m.apiContent || m.content };
     if (m.role === 'tool') {
-      const content = recent.has(i) || m.content.length <= 1500 ? m.content : `${m.content.slice(0, 1500)}\n[…resultado antigo resumido…]`;
-      return { role: 'tool', toolCallId: m.toolCallId, name: m.name, content, isError: !!m.isError };
+      let content = recent.has(i) || m.content.length <= 1500 ? m.content : `${m.content.slice(0, 1500)}\n[…resultado antigo resumido…]`;
+      if (m.image && i !== lastImage) content += '\n[captura de tela antiga omitida]';
+      const out = { role: 'tool', toolCallId: m.toolCallId, name: m.name, content, isError: !!m.isError };
+      if (m.image && i === lastImage) out.image = m.image;
+      return out;
     }
     return { role: 'assistant', content: m.content, toolCalls: m.toolCalls };
   });
+}
+
+/** Mantém só as 2 capturas mais recentes da conversa (as antigas viram texto). */
+function pruneImages(conv) {
+  const withImg = conv.messages.filter((m) => m.role === 'tool' && m.image);
+  withImg.slice(0, -2).forEach((m) => delete m.image);
+}
+
+async function persist(conv) {
+  pruneImages(conv);
+  await saveConversation(conv);
 }
 
 async function buildSystemPrompt(useTools) {
@@ -442,11 +457,14 @@ async function generate() {
   const providerCfg = settings.providers[conv.provider] || {};
   const useTools = settings.agentMode !== false;
   const maxSteps = Math.max(1, settings.maxSteps || 25);
-  let tools = useTools ? BROWSER_TOOLS : undefined;
+  const visionTools = ['screenshot', 'click_at'];
+  let vision = useTools && settings.agentVision !== false;
+  let tools = useTools ? BROWSER_TOOLS.filter((t) => vision || !visionTools.includes(t.name)) : undefined;
   const agent = useTools ? new BrowserAgent({ windowId: state.windowId }) : null;
   let touchedBrowser = false;
 
   const turn = startTurn(conv.provider, conv.model);
+  turn.el.classList.add('working');
   setBusy(true);
   state.abort = new AbortController();
   const { signal } = state.abort;
@@ -464,7 +482,7 @@ async function generate() {
           providerId: conv.provider,
           config: providerCfg,
           model: conv.model,
-          messages: apiHistory(conv.messages.slice(0, -1)),
+          messages: apiHistory(conv.messages.slice(0, -1), { images: vision }),
           system,
           temperature: settings.temperature,
           maxTokens: settings.maxTokens,
@@ -485,6 +503,15 @@ async function generate() {
         });
       } catch (err) {
         cancelAnimationFrame(frame);
+        if (vision && isVisionUnsupportedError(err)) {
+          // Modelo sem visão: segue sem capturas de tela.
+          conv.messages.pop();
+          block.remove();
+          vision = false;
+          tools = tools?.filter((t) => !visionTools.includes(t.name));
+          addNotice(turn, 'Este modelo não aceita imagens; seguindo sem capturas de tela.');
+          continue;
+        }
         if (tools && isToolsUnsupportedError(err)) {
           // Modelo sem suporte a ferramentas: tenta de novo só com texto.
           conv.messages.pop();
@@ -515,22 +542,25 @@ async function generate() {
           continue;
         }
         let content;
+        let image;
         let ok = true;
         try {
           if (!touchedBrowser) touchedBrowser = true;
           await agent.overlay(true);
-          content = await agent.run(call);
+          ({ content, image } = await agent.run(call));
           await agent.overlay(true);
         } catch (err) {
           ok = false;
           content = `Erro: ${err.message}`;
         }
-        conv.messages.push({ role: 'tool', toolCallId: call.id, name: call.name, content, isError: !ok });
-        markStep(row, ok ? 'ok' : 'error', content, call);
+        const toolMsg = { role: 'tool', toolCallId: call.id, name: call.name, content, isError: !ok };
+        if (image) toolMsg.image = image;
+        conv.messages.push(toolMsg);
+        markStep(row, ok ? 'ok' : 'error', content, call, image);
         scrollToBottom();
       }
       if (signal.aborted) throw new DOMException('Interrompido', 'AbortError');
-      await saveConversation(conv);
+      await persist(conv);
       if (step >= maxSteps) {
         addNotice(turn, `Limite de ${maxSteps} passos atingido. Envie “continue” para seguir.`);
         break;
@@ -548,10 +578,11 @@ async function generate() {
     if (touchedBrowser) await agent.overlay(false);
     turn.el.querySelectorAll('.content.thinking').forEach((n) => n.remove());
     addTurnTools(turn, true);
+    turn.el.classList.remove('working');
     setBusy(false);
     state.abort = null;
     scrollToBottom();
-    await saveConversation(conv);
+    await persist(conv);
   }
 }
 
@@ -610,7 +641,7 @@ function renderConversation() {
       for (const c of m.toolCalls || []) addStep(turn, c);
     } else if (m.role === 'tool') {
       const row = turn.el.querySelector(`.step[data-call="${CSS.escape(m.toolCallId || '')}"]`);
-      if (row) markStep(row, m.isError ? 'error' : 'ok', m.content, { name: m.name });
+      if (row) markStep(row, m.isError ? 'error' : 'ok', m.content, { name: m.name }, m.image);
     }
   }
   turns.forEach((t, i) => addTurnTools(t, i === turns.length - 1));
@@ -650,7 +681,7 @@ function startTurn(provider, model) {
   if (model) {
     const meta = document.createElement('div');
     meta.className = 'meta';
-    meta.innerHTML = `<span class="avatar">${icon('sparkles')}</span><b></b><span class="prov"></span>`;
+    meta.innerHTML = `<span class="avatar">${icon('nexo')}</span><b></b><span class="prov"></span>`;
     meta.querySelector('b').textContent = model;
     meta.querySelector('.prov').textContent = displayName(provider, state.settings.providers[provider]);
     el.appendChild(meta);
@@ -706,20 +737,29 @@ function addStep(turn, call) {
   const row = document.createElement('details');
   row.className = 'step running';
   row.dataset.call = call.id || '';
-  row.innerHTML = `<summary>${icon(ic, 'step-icon')}<span class="step-label"></span><span class="step-status"><span class="spinner"></span></span></summary><pre class="step-out"></pre>`;
+  row.innerHTML = `<summary>${icon(ic, 'step-icon')}<span class="step-label"></span><span class="step-status"><span class="spinner"></span></span></summary><div class="step-shot"></div><pre class="step-out"></pre>`;
   row.querySelector('.step-label').textContent = label;
   group.appendChild(row);
   scrollToBottom();
   return row;
 }
 
-function markStep(row, status, output, call) {
+function markStep(row, status, output, call, image) {
   row.classList.remove('running');
   row.classList.add(status);
   const st = row.querySelector('.step-status');
   st.innerHTML = status === 'ok' ? icon('check') : status === 'cancel' ? icon('x-mark') : icon('exclamation-triangle');
   const out = String(output || '');
   row.querySelector('.step-out').textContent = out.length > 2500 ? `${out.slice(0, 2500)}\n…` : out;
+  if (image) {
+    const img = document.createElement('img');
+    img.src = `data:${image.mediaType};base64,${image.data}`;
+    img.alt = 'Captura de tela enviada ao modelo';
+    img.loading = 'lazy';
+    row.querySelector('.step-shot').replaceChildren(img);
+    row.classList.add('has-shot');
+    row.open = true;
+  }
   if (call?.name === 'click' && status === 'ok') {
     const name = out.match(/^Clicado: \[\d+\] [^"\n]*"([^"\n]+)"/);
     if (name) row.querySelector('.step-label').textContent = `Clicando em “${name[1].slice(0, 48)}”`;

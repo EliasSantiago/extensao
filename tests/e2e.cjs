@@ -12,6 +12,7 @@ const OUT = path.resolve(__dirname, '..', 'dist', 'e2e');
 fs.mkdirSync(OUT, { recursive: true });
 
 const EXT = path.resolve(__dirname, '..');
+let visionSeen = false; // o "LLM" recebeu a captura de tela como imagem?
 const server = http.createServer((req, res) => {
   const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': '*' };
   if (req.method === 'OPTIONS') { res.writeHead(204, cors); return res.end(); }
@@ -37,15 +38,19 @@ const server = http.createServer((req, res) => {
       // "LLM" simulado que usa as ferramentas do navegador passo a passo
       const lastTool = [...j.messages].reverse().find((m) => m.role === 'tool');
       const call = (name, args) => send({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'c' + Date.now(), type: 'function', function: { name, arguments: JSON.stringify(args) } }] } }] });
+      const gotImage = j.messages.some((m) => Array.isArray(m.content) && m.content.some((c) => c.type === 'image_url' && c.image_url.url.startsWith('data:image/jpeg;base64,')));
       if (!lastTool) call('navigate', { url: 'http://localhost:8765/shop' });
+      else if (lastTool.content.startsWith('Captura de tela')) {
+        visionSeen = gotImage;
+        const ref = lastTool.content.match(/\[(\d+)\] input\[search\]/)[1];
+        call('type', { ref: Number(ref), text: 'camisa masculina premium', submit: true });
+      }
+      else if (lastTool.content.includes('Loja Teste')) call('screenshot', {});
       else if (lastTool.content.includes('Avaliações')) {
         send({ choices: [{ delta: { content: 'Encontrei a **Camisa Oxford Premium** (R$ 129,90), com material elogiado: algodão egípcio. http://localhost:8765/shop/p/1' } }] });
       } else if (lastTool.content.includes('Resultados para')) {
         const ref = lastTool.content.match(/\[(\d+)\] link "Camisa Oxford Premium"/)[1];
         call('click', { ref: Number(ref) });
-      } else if (lastTool.content.includes('Loja Teste')) {
-        const ref = lastTool.content.match(/\[(\d+)\] input\[search\]/)[1];
-        call('type', { ref: Number(ref), text: 'camisa masculina premium', submit: true });
       } else send({ choices: [{ delta: { content: 'ERRO_NO_FLUXO: ' + lastTool.content.slice(0, 200) } }] });
       res.write('data: [DONE]\n\n');
       return res.end();
@@ -163,7 +168,14 @@ const server = http.createServer((req, res) => {
   console.log('agent tab url:', site.url());
   console.log('overlay removed:', await site.evaluate(() => !document.getElementById('__nexo_agent_overlay')));
   console.log('agent answer:', (await sp.locator('.msg.assistant').last().locator('.content').last().innerText()).slice(0, 120));
-  if (steps.length !== 3 || steps.some((s) => !s.startsWith('ok')) || !site.url().endsWith('/shop/p/1')) errors.push('fluxo do agente falhou');
+  console.log('vision: imagem recebida pelo modelo =', visionSeen, '| miniatura no chat =', await sp.locator('.step.has-shot img').count());
+  if (!visionSeen) errors.push('captura de tela não chegou ao modelo');
+  if (steps.length !== 4 || steps.some((s) => !s.startsWith('ok')) || !site.url().endsWith('/shop/p/1')) errors.push('fluxo do agente falhou');
+  const shot = await sp.evaluate(async () => {
+    const { conversations } = await chrome.storage.local.get('conversations');
+    return conversations.flatMap((c) => c.messages).find((m) => m.image)?.image?.data;
+  });
+  if (shot) require('fs').writeFileSync(path.join(OUT, 'agent-capture.jpg'), Buffer.from(shot, 'base64'));
   await sp.bringToFront();
   await sp.screenshot({ path: path.join(OUT, 'sidepanel-agent.png') });
 

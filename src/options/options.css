@@ -24,7 +24,8 @@ textarea:focus-visible, input:focus-visible { outline: none; }
   background: var(--white);
   color: var(--black);
 }
-.logo svg { width: 28px; height: 28px; stroke-width: 1.8; }
+.logo svg { width: 30px; height: 30px; }
+.logo .hollow { fill: var(--white); }
 h1 { margin: 0; font-size: 24px; font-weight: 650; letter-spacing: -0.025em; }
 h2 {
   display: flex;

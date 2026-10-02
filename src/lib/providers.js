@@ -195,7 +195,7 @@ function parseArgs(raw) {
 //
 //   { role: 'user', content }
 //   { role: 'assistant', content, toolCalls?: [{ id, name, args, signature? }] }
-//   { role: 'tool', toolCallId, name, content, isError? }
+//   { role: 'tool', toolCallId, name, content, isError?, image?: { mediaType, data(base64) } }
 //
 // Ferramentas: [{ name, description, parameters (JSON Schema) }]
 // Cada adaptador converte para o formato do seu provedor e devolve
@@ -216,9 +216,24 @@ const adapters = {
   openai: {
     toMessages(messages, system) {
       const out = system ? [{ role: 'system', content: system }] : [];
+      let images = [];
+      // A API de chat só aceita texto em role=tool: as capturas vão numa mensagem de usuário em seguida.
+      const flush = () => {
+        if (!images.length) return;
+        out.push({
+          role: 'user',
+          content: [
+            { type: 'text', text: 'Captura(s) de tela devolvida(s) pela ferramenta screenshot:' },
+            ...images.map((img) => ({ type: 'image_url', image_url: { url: `data:${img.mediaType};base64,${img.data}` } }))
+          ]
+        });
+        images = [];
+      };
       for (const m of messages) {
+        if (m.role !== 'tool') flush();
         if (m.role === 'tool') {
           out.push({ role: 'tool', tool_call_id: m.toolCallId, content: m.content });
+          if (m.image) images.push(m.image);
         } else if (m.role === 'assistant' && m.toolCalls?.length) {
           out.push({
             role: 'assistant',
@@ -233,6 +248,7 @@ const adapters = {
           out.push({ role: m.role, content: m.content });
         }
       }
+      flush();
       return out;
     },
     async stream({ providerId, config, model, messages, system, temperature, maxTokens, signal, onToken, tools }) {
@@ -306,7 +322,17 @@ const adapters = {
         if (m.role === 'tool') {
           pushMerged(out, {
             role: 'user',
-            content: [{ type: 'tool_result', tool_use_id: m.toolCallId, content: m.content || '(vazio)', ...(m.isError ? { is_error: true } : {}) }]
+            content: [{
+              type: 'tool_result',
+              tool_use_id: m.toolCallId,
+              content: m.image
+                ? [
+                    { type: 'text', text: m.content || '(captura de tela)' },
+                    { type: 'image', source: { type: 'base64', media_type: m.image.mediaType, data: m.image.data } }
+                  ]
+                : m.content || '(vazio)',
+              ...(m.isError ? { is_error: true } : {})
+            }]
           }, 'content');
         } else if (m.role === 'assistant') {
           const blocks = [];
@@ -374,7 +400,9 @@ const adapters = {
       const out = [];
       for (const m of messages) {
         if (m.role === 'tool') {
-          pushMerged(out, { role: 'user', parts: [{ functionResponse: { name: m.name, response: { result: m.content } } }] }, 'parts');
+          const parts = [{ functionResponse: { name: m.name, response: { result: m.content } } }];
+          if (m.image) parts.push({ inlineData: { mimeType: m.image.mediaType, data: m.image.data } });
+          pushMerged(out, { role: 'user', parts }, 'parts');
         } else if (m.role === 'assistant') {
           const parts = [];
           if (m.content) parts.push({ text: m.content });
@@ -447,7 +475,10 @@ const adapters = {
     toMessages(messages, system) {
       const out = system ? [{ role: 'system', content: system }] : [];
       for (const m of messages) {
-        if (m.role === 'tool') out.push({ role: 'tool', content: m.content, tool_name: m.name });
+        if (m.role === 'tool') {
+          out.push({ role: 'tool', content: m.content, tool_name: m.name });
+          if (m.image) out.push({ role: 'user', content: 'Captura de tela devolvida pela ferramenta screenshot.', images: [m.image.data] });
+        }
         else if (m.role === 'assistant' && m.toolCalls?.length) {
           out.push({
             role: 'assistant',
@@ -506,7 +537,7 @@ function cleanMessages(messages) {
   return messages.map((m) => {
     const out = { role: m.role, content: m.content ?? '' };
     if (m.toolCalls?.length) out.toolCalls = m.toolCalls;
-    if (m.role === 'tool') Object.assign(out, { toolCallId: m.toolCallId, name: m.name, isError: !!m.isError });
+    if (m.role === 'tool') Object.assign(out, { toolCallId: m.toolCallId, name: m.name, isError: !!m.isError, ...(m.image ? { image: m.image } : {}) });
     return out;
   });
 }
@@ -552,6 +583,15 @@ export function isToolsUnsupportedError(err) {
   return (
     (err?.status === 400 || err?.status === 404 || err?.status === 422 || err?.status === 500) &&
     /(tool|function).{0,40}(support|not|unsupported|invalid|unknown|não)|does not support tools|tools? (is|are) not supported/.test(msg)
+  );
+}
+
+/** Erro típico de modelo que não aceita imagens (sem visão). */
+export function isVisionUnsupportedError(err) {
+  const msg = `${err?.message || ''} ${err?.detail || ''}`.toLowerCase();
+  return (
+    (err?.status >= 400 && err?.status < 600) &&
+    /(image|vision|multimodal|image_url|inline_?data|multi-modal).{0,80}(not supported|unsupported|does not support|not enabled|invalid|não suport)|does not support (images?|vision)|(images?|vision).{0,20}(is|are) not supported/.test(msg)
   );
 }
 
