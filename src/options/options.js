@@ -158,6 +158,8 @@ function fillGeneral() {
   $('#maxTokens').value = settings.maxTokens ?? '';
   $('#pageCharLimit').value = settings.pageCharLimit;
   $('#sendWithEnter').checked = !!settings.sendWithEnter;
+  $('#agentMode').checked = settings.agentMode !== false;
+  $('#maxSteps').value = settings.maxSteps || 25;
 }
 
 const numOrNull = (v) => (v === '' || v == null || Number.isNaN(Number(v)) ? null : Number(v));
@@ -169,6 +171,8 @@ async function save() {
   settings.maxTokens = numOrNull($('#maxTokens').value);
   settings.pageCharLimit = numOrNull($('#pageCharLimit').value) || DEFAULT_SETTINGS.pageCharLimit;
   settings.sendWithEnter = $('#sendWithEnter').checked;
+  settings.agentMode = $('#agentMode').checked;
+  settings.maxSteps = Math.min(Math.max(numOrNull($('#maxSteps').value) || 25, 1), 100);
 
   await saveSettings(settings);
   status('✓ Configurações salvas.');

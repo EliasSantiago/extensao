@@ -18,6 +18,7 @@ sem sair da página, podendo usar o **conteúdo da página** ou o **texto seleci
 | 6 | Menu de contexto | Botão direito → Resumir / Explicar / Traduzir / Perguntar sobre a seleção; Resumir a página |
 | 7 | Histórico | Conversas salvas localmente (`chrome.storage.local`), com lista, reabrir e excluir |
 | 8 | Respostas em tempo real | Streaming (SSE / NDJSON) com botão de parar |
+| 10 | Navegar e agir nos sites (agente) | *Tool calling* nos 4 formatos de API + ferramentas de navegador (`src/lib/tools.js`): navigate, search_web, read_page, find, click, type, select_option, press_key, scroll, wait, list_tabs, switch_tab, new_tab; laço do agente com passos visíveis, limite de passos e confirmação para ações sensíveis |
 | 9 | Segurança das chaves | Chaves ficam apenas em `chrome.storage.local` do navegador; não há servidor intermediário |
 
 ## Arquitetura
@@ -60,6 +61,6 @@ ou escrever um novo adaptador com `stream()` e `listModels()`.
 ## Evoluções futuras
 
 - Envio de imagens/prints da aba (modelos multimodais).
-- Ferramentas/agentes (clicar, preencher formulários) com confirmação do usuário.
+- Agente com capturas de tela (visão) para sites com canvas/imagens, e eventos de teclado/mouse “reais” via `chrome.debugger`.
 - Sincronizar histórico entre dispositivos (opcional e criptografado).
 - Prompts salvos ("atalhos") e internacionalização (`_locales`).

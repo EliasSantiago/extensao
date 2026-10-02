@@ -206,3 +206,6 @@ input:focus, textarea:focus { border-color: var(--text-3); box-shadow: 0 0 0 3px
 
 .provider .row-actions { flex-wrap: nowrap; }
 .provider .row-actions .btn { flex: 1; justify-content: center; padding: 0 10px; }
+
+.field.narrow { max-width: 320px; }
+.switch-row small { display: block; margin-top: 2px; font-size: 12px; }

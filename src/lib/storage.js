@@ -26,6 +26,8 @@ export const DEFAULT_SETTINGS = {
   temperature: null,
   maxTokens: null,
   pageCharLimit: 30000,
+  agentMode: true,
+  maxSteps: 25,
   sendWithEnter: true
 };
 

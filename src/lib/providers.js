@@ -115,7 +115,10 @@ async function httpError(res, providerId) {
   } else if (res.status === 429) {
     hint = ' — limite de uso/cota atingido.';
   }
-  return new Error(`HTTP ${res.status}${detail ? `: ${String(detail).slice(0, 500)}` : ''}${hint}`);
+  const error = new Error(`HTTP ${res.status}${detail ? `: ${String(detail).slice(0, 500)}` : ''}${hint}`);
+  error.status = res.status;
+  error.detail = String(detail || '');
+  return error;
 }
 
 async function request(providerId, url, options) {
@@ -175,25 +178,75 @@ function isNum(v) {
   return typeof v === 'number' && Number.isFinite(v);
 }
 
+
+function newCallId() {
+  return `call_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36).slice(-4)}`;
+}
+
+function parseArgs(raw) {
+  if (raw && typeof raw === 'object') return raw;
+  if (!raw) return {};
+  const parsed = parseJSON(raw);
+  return parsed && typeof parsed === 'object' ? parsed : { _raw: String(raw) };
+}
+
 // ---------------------------------------------------------------------------
-// Adaptadores
+// Formato de mensagens unificado
+//
+//   { role: 'user', content }
+//   { role: 'assistant', content, toolCalls?: [{ id, name, args, signature? }] }
+//   { role: 'tool', toolCallId, name, content, isError? }
+//
+// Ferramentas: [{ name, description, parameters (JSON Schema) }]
+// Cada adaptador converte para o formato do seu provedor e devolve
+// { toolCalls } — o texto é entregue por onToken durante o streaming.
 // ---------------------------------------------------------------------------
+
+/** Junta mensagens consecutivas do mesmo papel (exigência da Anthropic/Gemini). */
+function pushMerged(list, msg, key) {
+  const last = list[list.length - 1];
+  if (last && last.role === msg.role) {
+    last[key] = [...last[key], ...msg[key]];
+  } else {
+    list.push(msg);
+  }
+}
 
 const adapters = {
   openai: {
-    async stream({ providerId, config, model, messages, system, temperature, maxTokens, signal, onToken }) {
+    toMessages(messages, system) {
+      const out = system ? [{ role: 'system', content: system }] : [];
+      for (const m of messages) {
+        if (m.role === 'tool') {
+          out.push({ role: 'tool', tool_call_id: m.toolCallId, content: m.content });
+        } else if (m.role === 'assistant' && m.toolCalls?.length) {
+          out.push({
+            role: 'assistant',
+            content: m.content || null,
+            tool_calls: m.toolCalls.map((c) => ({
+              id: c.id,
+              type: 'function',
+              function: { name: c.name, arguments: JSON.stringify(c.args || {}) }
+            }))
+          });
+        } else {
+          out.push({ role: m.role, content: m.content });
+        }
+      }
+      return out;
+    },
+    async stream({ providerId, config, model, messages, system, temperature, maxTokens, signal, onToken, tools }) {
       const headers = { 'Content-Type': 'application/json' };
       if (config.apiKey) headers.Authorization = `Bearer ${config.apiKey}`;
-      const body = {
-        model,
-        stream: true,
-        messages: [...(system ? [{ role: 'system', content: system }] : []), ...messages]
-      };
+      const body = { model, stream: true, messages: this.toMessages(messages, system) };
       if (isNum(temperature)) body.temperature = temperature;
       if (isNum(maxTokens)) {
         // A API oficial da OpenAI usa max_completion_tokens; servidores compatíveis usam max_tokens.
         if (providerId === 'openai') body.max_completion_tokens = maxTokens;
         else body.max_tokens = maxTokens;
+      }
+      if (tools?.length) {
+        body.tools = tools.map((t) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } }));
       }
       const res = await request(providerId, `${baseUrl(providerId, config)}/chat/completions`, {
         method: 'POST',
@@ -201,14 +254,28 @@ const adapters = {
         body: JSON.stringify(body),
         signal
       });
+      const calls = [];
       for await (const data of sseData(res)) {
         if (data === '[DONE]') break;
         const json = parseJSON(data);
         if (!json) continue;
         if (json.error) throw new Error(json.error.message || JSON.stringify(json.error));
-        const delta = json.choices?.[0]?.delta?.content;
-        if (delta) onToken(delta);
+        const delta = json.choices?.[0]?.delta || json.choices?.[0]?.message;
+        if (!delta) continue;
+        if (delta.content) onToken(delta.content);
+        (delta.tool_calls || []).forEach((tc, i) => {
+          const idx = tc.index ?? i;
+          const c = (calls[idx] ||= { id: '', name: '', args: '' });
+          if (tc.id) c.id = tc.id;
+          if (tc.function?.name) c.name += tc.function.name;
+          if (tc.function?.arguments) {
+            c.args += typeof tc.function.arguments === 'string' ? tc.function.arguments : JSON.stringify(tc.function.arguments);
+          }
+        });
       }
+      return {
+        toolCalls: calls.filter((c) => c && c.name).map((c) => ({ id: c.id || newCallId(), name: c.name, args: parseArgs(c.args) }))
+      };
     },
     async listModels({ providerId, config }) {
       const headers = {};
@@ -233,28 +300,65 @@ const adapters = {
         'anthropic-dangerous-direct-browser-access': 'true'
       };
     },
-    async stream({ providerId, config, model, messages, system, temperature, maxTokens, signal, onToken }) {
+    toMessages(messages) {
+      const out = [];
+      for (const m of messages) {
+        if (m.role === 'tool') {
+          pushMerged(out, {
+            role: 'user',
+            content: [{ type: 'tool_result', tool_use_id: m.toolCallId, content: m.content || '(vazio)', ...(m.isError ? { is_error: true } : {}) }]
+          }, 'content');
+        } else if (m.role === 'assistant') {
+          const blocks = [];
+          if (m.content) blocks.push({ type: 'text', text: m.content });
+          for (const c of m.toolCalls || []) blocks.push({ type: 'tool_use', id: c.id, name: c.name, input: c.args || {} });
+          if (blocks.length) pushMerged(out, { role: 'assistant', content: blocks }, 'content');
+        } else {
+          const last = out[out.length - 1];
+          if (last?.role === 'user') last.content.push({ type: 'text', text: m.content });
+          else out.push({ role: 'user', content: [{ type: 'text', text: m.content }] });
+        }
+      }
+      // Mantém o formato simples (string) quando a mensagem é só texto.
+      return out.map((m) =>
+        m.content.length === 1 && m.content[0].type === 'text' ? { role: m.role, content: m.content[0].text } : m
+      );
+    },
+    async stream({ providerId, config, model, messages, system, temperature, maxTokens, signal, onToken, tools }) {
       const body = {
         model,
         stream: true,
         max_tokens: isNum(maxTokens) ? maxTokens : 8192,
-        messages
+        messages: this.toMessages(messages)
       };
       if (system) body.system = system;
       if (isNum(temperature)) body.temperature = temperature;
+      if (tools?.length) body.tools = tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.parameters }));
       const res = await request(providerId, `${baseUrl(providerId, config)}/messages`, {
         method: 'POST',
         headers: this.headers(config),
         body: JSON.stringify(body),
         signal
       });
+      const blocks = {};
       for await (const data of sseData(res)) {
         const json = parseJSON(data);
         if (!json) continue;
         if (json.type === 'error') throw new Error(json.error?.message || 'Erro na API da Anthropic');
-        if (json.type === 'content_block_delta' && json.delta?.type === 'text_delta') onToken(json.delta.text);
+        if (json.type === 'content_block_start' && json.content_block?.type === 'tool_use') {
+          blocks[json.index] = { id: json.content_block.id, name: json.content_block.name, args: '' };
+        }
+        if (json.type === 'content_block_delta') {
+          if (json.delta?.type === 'text_delta') onToken(json.delta.text);
+          if (json.delta?.type === 'input_json_delta' && blocks[json.index]) blocks[json.index].args += json.delta.partial_json;
+        }
         if (json.type === 'message_stop') break;
       }
+      return {
+        toolCalls: Object.keys(blocks)
+          .sort((a, b) => a - b)
+          .map((k) => ({ id: blocks[k].id, name: blocks[k].name, args: parseArgs(blocks[k].args) }))
+      };
     },
     async listModels({ providerId, config }) {
       const res = await request(providerId, `${baseUrl(providerId, config)}/models?limit=100`, {
@@ -266,18 +370,34 @@ const adapters = {
   },
 
   gemini: {
-    async stream({ providerId, config, model, messages, system, temperature, maxTokens, signal, onToken }) {
-      const body = {
-        contents: messages.map((m) => ({
-          role: m.role === 'assistant' ? 'model' : 'user',
-          parts: [{ text: m.content }]
-        }))
-      };
+    toContents(messages) {
+      const out = [];
+      for (const m of messages) {
+        if (m.role === 'tool') {
+          pushMerged(out, { role: 'user', parts: [{ functionResponse: { name: m.name, response: { result: m.content } } }] }, 'parts');
+        } else if (m.role === 'assistant') {
+          const parts = [];
+          if (m.content) parts.push({ text: m.content });
+          for (const c of m.toolCalls || []) {
+            parts.push({ functionCall: { name: c.name, args: c.args || {} }, ...(c.signature ? { thoughtSignature: c.signature } : {}) });
+          }
+          if (parts.length) pushMerged(out, { role: 'model', parts }, 'parts');
+        } else {
+          pushMerged(out, { role: 'user', parts: [{ text: m.content }] }, 'parts');
+        }
+      }
+      return out;
+    },
+    async stream({ providerId, config, model, messages, system, temperature, maxTokens, signal, onToken, tools }) {
+      const body = { contents: this.toContents(messages) };
       if (system) body.systemInstruction = { parts: [{ text: system }] };
       const generationConfig = {};
       if (isNum(temperature)) generationConfig.temperature = temperature;
       if (isNum(maxTokens)) generationConfig.maxOutputTokens = maxTokens;
       if (Object.keys(generationConfig).length) body.generationConfig = generationConfig;
+      if (tools?.length) {
+        body.tools = [{ functionDeclarations: tools.map((t) => ({ name: t.name, description: t.description, parameters: t.parameters })) }];
+      }
 
       const url = `${baseUrl(providerId, config)}/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`;
       const res = await request(providerId, url, {
@@ -286,6 +406,7 @@ const adapters = {
         body: JSON.stringify(body),
         signal
       });
+      const toolCalls = [];
       for await (const data of sseData(res)) {
         const json = parseJSON(data);
         if (!json) continue;
@@ -293,9 +414,20 @@ const adapters = {
         const parts = json.candidates?.[0]?.content?.parts || [];
         const text = parts.filter((p) => !p.thought && p.text).map((p) => p.text).join('');
         if (text) onToken(text);
+        for (const p of parts) {
+          if (p.functionCall) {
+            toolCalls.push({
+              id: p.functionCall.id || newCallId(),
+              name: p.functionCall.name,
+              args: p.functionCall.args || {},
+              ...(p.thoughtSignature ? { signature: p.thoughtSignature } : {})
+            });
+          }
+        }
         const reason = json.promptFeedback?.blockReason;
         if (reason) throw new Error(`Bloqueado pelo Gemini: ${reason}`);
       }
+      return { toolCalls };
     },
     async listModels({ providerId, config }) {
       const res = await request(providerId, `${baseUrl(providerId, config)}/models?pageSize=200`, {
@@ -312,31 +444,49 @@ const adapters = {
   },
 
   ollama: {
-    async stream({ providerId, config, model, messages, system, temperature, maxTokens, signal, onToken }) {
+    toMessages(messages, system) {
+      const out = system ? [{ role: 'system', content: system }] : [];
+      for (const m of messages) {
+        if (m.role === 'tool') out.push({ role: 'tool', content: m.content, tool_name: m.name });
+        else if (m.role === 'assistant' && m.toolCalls?.length) {
+          out.push({
+            role: 'assistant',
+            content: m.content || '',
+            tool_calls: m.toolCalls.map((c) => ({ function: { name: c.name, arguments: c.args || {} } }))
+          });
+        } else out.push({ role: m.role, content: m.content });
+      }
+      return out;
+    },
+    async stream({ providerId, config, model, messages, system, temperature, maxTokens, signal, onToken, tools }) {
       const options = {};
       if (isNum(temperature)) options.temperature = temperature;
       if (isNum(maxTokens)) options.num_predict = maxTokens;
       const headers = { 'Content-Type': 'application/json' };
       if (config.apiKey) headers.Authorization = `Bearer ${config.apiKey}`;
+      const body = { model, stream: true, messages: this.toMessages(messages, system), options };
+      if (tools?.length) {
+        body.tools = tools.map((t) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } }));
+      }
       const res = await request(providerId, `${baseUrl(providerId, config)}/api/chat`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({
-          model,
-          stream: true,
-          messages: [...(system ? [{ role: 'system', content: system }] : []), ...messages],
-          options
-        }),
+        body: JSON.stringify(body),
         signal
       });
+      const toolCalls = [];
       for await (const line of readLines(res)) {
         if (!line.trim()) continue;
         const json = parseJSON(line);
         if (!json) continue;
         if (json.error) throw new Error(json.error);
         if (json.message?.content) onToken(json.message.content);
+        for (const tc of json.message?.tool_calls || []) {
+          toolCalls.push({ id: tc.id || newCallId(), name: tc.function?.name, args: parseArgs(tc.function?.arguments) });
+        }
         if (json.done) break;
       }
+      return { toolCalls: toolCalls.filter((c) => c.name) };
     },
     async listModels({ providerId, config }) {
       const headers = {};
@@ -352,32 +502,57 @@ const adapters = {
 // API pública
 // ---------------------------------------------------------------------------
 
+function cleanMessages(messages) {
+  return messages.map((m) => {
+    const out = { role: m.role, content: m.content ?? '' };
+    if (m.toolCalls?.length) out.toolCalls = m.toolCalls;
+    if (m.role === 'tool') Object.assign(out, { toolCallId: m.toolCallId, name: m.name, isError: !!m.isError });
+    return out;
+  });
+}
+
 /**
- * Envia a conversa ao provedor e chama onToken a cada trecho recebido.
- * @returns {Promise<string>} texto completo da resposta
+ * Um turno do modelo: envia a conversa (com ferramentas opcionais), entrega o texto
+ * por onToken durante o streaming e devolve { text, toolCalls }.
  */
-export async function streamChat({ providerId, config = {}, model, messages, system, temperature, maxTokens, signal, onToken }) {
+export async function chatTurn({ providerId, config = {}, model, messages, system, temperature, maxTokens, signal, onToken, tools }) {
   const provider = PROVIDERS[providerId];
   if (!provider) throw new Error(`Provedor desconhecido: ${providerId}`);
   if (provider.needsKey && !config.apiKey) {
     throw new Error(`Configure a chave de API de ${provider.name} nas configurações.`);
   }
-  let full = '';
-  await adapters[provider.kind].stream({
+  let text = '';
+  const { toolCalls = [] } = await adapters[provider.kind].stream({
     providerId,
     config,
     model,
-    messages: messages.map((m) => ({ role: m.role, content: m.content })),
+    messages: cleanMessages(messages),
     system,
     temperature,
     maxTokens,
     signal,
+    tools,
     onToken: (t) => {
-      full += t;
-      onToken?.(t, full);
+      text += t;
+      onToken?.(t, text);
     }
   });
-  return full;
+  return { text, toolCalls };
+}
+
+/** Atalho sem ferramentas: devolve só o texto da resposta. */
+export async function streamChat(opts) {
+  const { text } = await chatTurn({ ...opts, tools: undefined });
+  return text;
+}
+
+/** Erro típico de modelo/servidor que não aceita ferramentas (function calling). */
+export function isToolsUnsupportedError(err) {
+  const msg = `${err?.message || ''} ${err?.detail || ''}`.toLowerCase();
+  return (
+    (err?.status === 400 || err?.status === 404 || err?.status === 422 || err?.status === 500) &&
+    /(tool|function).{0,40}(support|not|unsupported|invalid|unknown|não)|does not support tools|tools? (is|are) not supported/.test(msg)
+  );
 }
 
 /** Lista os modelos disponíveis no provedor. */

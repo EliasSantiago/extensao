@@ -53,6 +53,16 @@
             </label>
           </div>
           <label class="switch-row">
+            <span class="switch"><input id="agentMode" type="checkbox" /><span></span></span>
+            <span>Modo agente: a IA pode navegar, clicar e digitar nos sites <small class="muted">(pede confirmação antes de compras, pagamentos e envios)</small></span>
+          </label>
+          <div class="row">
+            <label class="field narrow">
+              <span>Máx. de passos do agente por mensagem</span>
+              <input id="maxSteps" type="number" min="1" max="100" step="1" />
+            </label>
+          </div>
+          <label class="switch-row">
             <span class="switch"><input id="sendWithEnter" type="checkbox" /><span></span></span>
             Enviar com Enter (Shift+Enter para nova linha)
           </label>

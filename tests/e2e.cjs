@@ -16,15 +16,42 @@ const server = http.createServer((req, res) => {
   const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': '*' };
   if (req.method === 'OPTIONS') { res.writeHead(204, cors); return res.end(); }
   if (req.url === '/page') { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); return res.end('<title>Página Teste</title><main><h1>Olá</h1><p>' + 'conteúdo '.repeat(100) + '</p></main>'); }
+  // Loja falsa para o teste do agente
+  const html = (title, bodyHtml) => { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); res.end(`<!doctype html><title>${title}</title><body>${bodyHtml}</body>`); };
+  if (req.url === '/shop') return html('Loja Teste', '<header><form action="/shop/search"><input type="search" name="q" placeholder="Buscar produtos"><button>Buscar</button></form></header><main><h1>Loja Teste</h1><p>Moda masculina e feminina.</p></main>');
+  if (req.url.startsWith('/shop/search')) {
+    const q = new URL(req.url, 'http://x').searchParams.get('q') || '';
+    return html('Busca', `<main><h1>Resultados para ${q}</h1><ul><li><a href="/shop/p/1">Camisa Oxford Premium</a> R$ 129,90</li><li><a href="/shop/p/2">Camisa Básica</a> R$ 49,90</li></ul></main>`);
+  }
+  if (req.url === '/shop/p/1') return html('Camisa Oxford Premium', '<main><h1>Camisa Oxford Premium</h1><p>R$ 129,90</p><section><h2>Avaliações</h2><p>“Algodão egípcio macio, material excelente!” ★★★★★</p></section></main>');
   if (req.url.endsWith('/models')) { res.writeHead(200, { ...cors, 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ data: [{ id: 'mock-llm' }] })); }
   if (req.method !== 'POST') { res.writeHead(404); return res.end(); }
   let body = '';
   req.on('data', (c) => (body += c));
   req.on('end', () => {
     const j = JSON.parse(body);
-    const last = j.messages[j.messages.length - 1].content;
-    const hasPage = last.includes('<pagina');
     res.writeHead(200, { ...cors, 'Content-Type': 'text/event-stream' });
+    const send = (obj) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
+    const firstUser = j.messages.find((m) => m.role === 'user')?.content || '';
+    if (j.tools && /loja teste/i.test(firstUser)) {
+      // "LLM" simulado que usa as ferramentas do navegador passo a passo
+      const lastTool = [...j.messages].reverse().find((m) => m.role === 'tool');
+      const call = (name, args) => send({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'c' + Date.now(), type: 'function', function: { name, arguments: JSON.stringify(args) } }] } }] });
+      if (!lastTool) call('navigate', { url: 'http://localhost:8765/shop' });
+      else if (lastTool.content.includes('Avaliações')) {
+        send({ choices: [{ delta: { content: 'Encontrei a **Camisa Oxford Premium** (R$ 129,90), com material elogiado: algodão egípcio. http://localhost:8765/shop/p/1' } }] });
+      } else if (lastTool.content.includes('Resultados para')) {
+        const ref = lastTool.content.match(/\[(\d+)\] link "Camisa Oxford Premium"/)[1];
+        call('click', { ref: Number(ref) });
+      } else if (lastTool.content.includes('Loja Teste')) {
+        const ref = lastTool.content.match(/\[(\d+)\] input\[search\]/)[1];
+        call('type', { ref: Number(ref), text: 'camisa masculina premium', submit: true });
+      } else send({ choices: [{ delta: { content: 'ERRO_NO_FLUXO: ' + lastTool.content.slice(0, 200) } }] });
+      res.write('data: [DONE]\n\n');
+      return res.end();
+    }
+    const last = j.messages[j.messages.length - 1].content || '';
+    const hasPage = last.includes('<pagina');
     const parts = ['## Resposta\n\n', 'Você disse: **', last.slice(-20), '**\n\n', hasPage ? 'PAGINA_RECEBIDA\n\n' : '', '```js\nconsole.log(1)\n```'];
     let i = 0;
     const t = setInterval(() => {
@@ -122,6 +149,23 @@ const server = http.createServer((req, res) => {
   await sp.click('#btn-history');
   console.log('history items:', await sp.locator('#history-list li').count());
   await sp.screenshot({ path: path.join(OUT, 'sidepanel-history.png') });
+
+  // Agente: navega, busca e abre um produto na loja falsa
+  await sp.click('#history-close').catch(() => {});
+  await sp.click('#btn-new');
+  await site.bringToFront();
+  await sp.fill('#input', 'Entre na loja teste e busque camisas masculinas premium com material elogiado');
+  await sp.click('#btn-send');
+  await sp.waitForFunction(() => document.querySelector('.msg.assistant:last-of-type')?.innerText.includes('Oxford'), null, { timeout: 60000 });
+  await sp.waitForFunction(() => !document.querySelector('#btn-send').classList.contains('busy'), null, { timeout: 20000 });
+  const steps = await sp.$$eval('.step', (s) => s.map((x) => `${x.className.replace('step ', '')}: ${x.querySelector('.step-label').textContent}`));
+  console.log('agent steps:', steps);
+  console.log('agent tab url:', site.url());
+  console.log('overlay removed:', await site.evaluate(() => !document.getElementById('__nexo_agent_overlay')));
+  console.log('agent answer:', (await sp.locator('.msg.assistant').last().locator('.content').last().innerText()).slice(0, 120));
+  if (steps.length !== 3 || steps.some((s) => !s.startsWith('ok')) || !site.url().endsWith('/shop/p/1')) errors.push('fluxo do agente falhou');
+  await sp.bringToFront();
+  await sp.screenshot({ path: path.join(OUT, 'sidepanel-agent.png') });
 
   console.log('ERRORS:', errors);
   if (errors.length) process.exitCode = 1;

@@ -1,4 +1,5 @@
-import { PROVIDERS, PROVIDER_ORDER, modelsFor, displayName, streamChat } from '../lib/providers.js';
+import { PROVIDERS, PROVIDER_ORDER, modelsFor, displayName, chatTurn, isToolsUnsupportedError } from '../lib/providers.js';
+import { BROWSER_TOOLS, BrowserAgent, AGENT_INSTRUCTIONS, describeToolCall } from '../lib/tools.js';
 import { getSettings, updateSettings, listConversations, saveConversation, deleteConversation, newId } from '../lib/storage.js';
 import { renderMarkdown } from '../lib/markdown.js';
 import { icon, hydrateIcons } from '../lib/icons.js';
@@ -47,6 +48,7 @@ init();
 
 async function init() {
   state.settings = await getSettings();
+  state.windowId = (await chrome.windows.getCurrent().catch(() => null))?.id;
   state.conversation = blankConversation();
   refreshModels();
   bindEvents();
@@ -402,62 +404,150 @@ async function send({ tabId } = {}) {
   await generate();
 }
 
+// ---------------------------------------------------------------------------
+// Agente: laço modelo → ferramentas → modelo
+// ---------------------------------------------------------------------------
+
+/** Histórico no formato unificado dos provedores (resultados antigos de ferramentas resumidos). */
+function apiHistory(messages) {
+  const list = messages.filter((m) => !m.error && !(m.role === 'assistant' && !m.content && !m.toolCalls?.length));
+  const toolIdx = list.map((m, i) => (m.role === 'tool' ? i : -1)).filter((i) => i >= 0);
+  const recent = new Set(toolIdx.slice(-3));
+  return list.map((m, i) => {
+    if (m.role === 'user') return { role: 'user', content: m.apiContent || m.content };
+    if (m.role === 'tool') {
+      const content = recent.has(i) || m.content.length <= 1500 ? m.content : `${m.content.slice(0, 1500)}\n[…resultado antigo resumido…]`;
+      return { role: 'tool', toolCallId: m.toolCallId, name: m.name, content, isError: !!m.isError };
+    }
+    return { role: 'assistant', content: m.content, toolCalls: m.toolCalls };
+  });
+}
+
+async function buildSystemPrompt(useTools) {
+  const base = state.settings.systemPrompt || '';
+  if (!useTools) return base;
+  let tabInfo = '';
+  try {
+    const [t] = await chrome.tabs.query({ active: true, windowId: state.windowId });
+    if (t) tabInfo = `\nAba aberta pelo usuário agora: “${t.title}” — ${t.url}`;
+  } catch {
+    /* ignora */
+  }
+  return `${base}\n\n${AGENT_INSTRUCTIONS}\n\nData e hora atuais: ${new Date().toLocaleString('pt-BR')}.${tabInfo}`;
+}
+
 async function generate() {
   const conv = state.conversation;
   const { settings } = state;
   const providerCfg = settings.providers[conv.provider] || {};
+  const useTools = settings.agentMode !== false;
+  const maxSteps = Math.max(1, settings.maxSteps || 25);
+  let tools = useTools ? BROWSER_TOOLS : undefined;
+  const agent = useTools ? new BrowserAgent({ windowId: state.windowId }) : null;
+  let touchedBrowser = false;
 
-  const assistant = { role: 'assistant', content: '', provider: conv.provider, model: conv.model };
-  conv.messages.push(assistant);
-  const el = appendMessage(assistant, conv.messages.length - 1, { streaming: true });
-  const contentEl = el.querySelector('.content');
-
+  const turn = startTurn(conv.provider, conv.model);
   setBusy(true);
   state.abort = new AbortController();
-  let frame = 0;
-
-  const history = conv.messages
-    .slice(0, -1)
-    .filter((m) => !m.error && m.content)
-    .map((m) => ({ role: m.role, content: m.apiContent || m.content }));
+  const { signal } = state.abort;
+  const system = await buildSystemPrompt(useTools);
 
   try {
-    await streamChat({
-      providerId: conv.provider,
-      config: providerCfg,
-      model: conv.model,
-      messages: history,
-      system: settings.systemPrompt,
-      temperature: settings.temperature,
-      maxTokens: settings.maxTokens,
-      signal: state.abort.signal,
-      onToken: (_, full) => {
-        assistant.content = full;
-        if (!frame) {
-          frame = requestAnimationFrame(() => {
-            frame = 0;
-            const stick = nearBottom();
-            contentEl.classList.remove('thinking');
-            contentEl.innerHTML = renderMarkdown(assistant.content);
-            if (stick) scrollToBottom();
-          });
+    for (let step = 1; ; step++) {
+      const assistant = { role: 'assistant', content: '', provider: conv.provider, model: conv.model };
+      conv.messages.push(assistant);
+      const block = addTextBlock(turn, { thinking: true });
+      let frame = 0;
+      let res;
+      try {
+        res = await chatTurn({
+          providerId: conv.provider,
+          config: providerCfg,
+          model: conv.model,
+          messages: apiHistory(conv.messages.slice(0, -1)),
+          system,
+          temperature: settings.temperature,
+          maxTokens: settings.maxTokens,
+          tools,
+          signal,
+          onToken: (_, full) => {
+            assistant.content = full;
+            if (frame) return;
+            frame = requestAnimationFrame(() => {
+              frame = 0;
+              const stick = nearBottom();
+              block.classList.remove('thinking');
+              block.classList.add('cursor');
+              block.innerHTML = renderMarkdown(assistant.content);
+              if (stick) scrollToBottom();
+            });
+          }
+        });
+      } catch (err) {
+        cancelAnimationFrame(frame);
+        if (tools && isToolsUnsupportedError(err)) {
+          // Modelo sem suporte a ferramentas: tenta de novo só com texto.
+          conv.messages.pop();
+          block.remove();
+          tools = undefined;
+          addNotice(turn, 'Este modelo não aceita ferramentas, então não pode navegar. Respondendo só com texto.');
+          continue;
         }
+        if (!assistant.content) {
+          conv.messages.pop();
+          block.remove();
+        } else {
+          finishTextBlock(block, assistant.content);
+        }
+        throw err;
       }
-    });
-    if (!assistant.content) assistant.content = '_(resposta vazia)_';
+      cancelAnimationFrame(frame);
+      assistant.content = res.text;
+      finishTextBlock(block, assistant.content);
+      if (!res.toolCalls.length) break;
+
+      assistant.toolCalls = res.toolCalls;
+      for (const call of res.toolCalls) {
+        const row = addStep(turn, call);
+        if (signal.aborted) {
+          conv.messages.push({ role: 'tool', toolCallId: call.id, name: call.name, content: 'Cancelado pelo usuário.', isError: true });
+          markStep(row, 'cancel', 'Cancelado pelo usuário.');
+          continue;
+        }
+        let content;
+        let ok = true;
+        try {
+          if (!touchedBrowser) touchedBrowser = true;
+          await agent.overlay(true);
+          content = await agent.run(call);
+          await agent.overlay(true);
+        } catch (err) {
+          ok = false;
+          content = `Erro: ${err.message}`;
+        }
+        conv.messages.push({ role: 'tool', toolCallId: call.id, name: call.name, content, isError: !ok });
+        markStep(row, ok ? 'ok' : 'error', content, call);
+        scrollToBottom();
+      }
+      if (signal.aborted) throw new DOMException('Interrompido', 'AbortError');
+      await saveConversation(conv);
+      if (step >= maxSteps) {
+        addNotice(turn, `Limite de ${maxSteps} passos atingido. Envie “continue” para seguir.`);
+        break;
+      }
+    }
   } catch (err) {
     if (err.name === 'AbortError') {
-      assistant.content += assistant.content ? '\n\n_(interrompido)_' : '_(interrompido)_';
+      addNotice(turn, 'Interrompido.');
     } else {
-      assistant.error = true;
-      assistant.content = err.message;
-      el.classList.add('error');
+      const msg = { role: 'assistant', content: err.message, error: true, provider: conv.provider, model: conv.model };
+      conv.messages.push(msg);
+      addErrorBlock(turn, err.message);
     }
   } finally {
-    cancelAnimationFrame(frame);
-    contentEl.classList.remove('cursor', 'thinking');
-    renderContent(contentEl, assistant);
-    addMessageTools(el, assistant, conv.messages.length - 1);
+    if (touchedBrowser) await agent.overlay(false);
+    turn.el.querySelectorAll('.content.thinking').forEach((n) => n.remove());
+    addTurnTools(turn, true);
     setBusy(false);
     state.abort = null;
     scrollToBottom();
@@ -472,7 +562,7 @@ function stop() {
 async function regenerate() {
   const conv = state.conversation;
   if (state.busy) return;
-  while (conv.messages.length && conv.messages[conv.messages.length - 1].role === 'assistant') conv.messages.pop();
+  while (conv.messages.length && conv.messages[conv.messages.length - 1].role !== 'user') conv.messages.pop();
   if (!conv.messages.length || !currentModelAvailable()) return;
   renderConversation();
   await generate();
@@ -487,8 +577,8 @@ function setBusy(busy) {
 }
 
 function showError(message) {
-  const el = appendMessage({ role: 'assistant', content: message, error: true }, -1);
-  el.classList.add('error');
+  const turn = startTurn(null, null);
+  addErrorBlock(turn, message);
   scrollToBottom();
 }
 
@@ -501,62 +591,139 @@ function renderConversation() {
   els.messages.querySelectorAll('.msg').forEach((n) => n.remove());
   els.welcome.classList.toggle('hidden', conv.messages.length > 0);
   els.title.textContent = conv.title;
-  conv.messages.forEach((m, i) => appendMessage(m, i));
+
+  let turn = null;
+  const turns = [];
+  for (const m of conv.messages) {
+    if (m.role === 'user') {
+      turn = null;
+      appendUser(m);
+      continue;
+    }
+    if (!turn) {
+      turn = startTurn(m.provider || conv.provider, m.model || conv.model);
+      turns.push(turn);
+    }
+    if (m.role === 'assistant') {
+      if (m.error) addErrorBlock(turn, m.content);
+      else if (m.content) finishTextBlock(addTextBlock(turn), m.content);
+      for (const c of m.toolCalls || []) addStep(turn, c);
+    } else if (m.role === 'tool') {
+      const row = turn.el.querySelector(`.step[data-call="${CSS.escape(m.toolCallId || '')}"]`);
+      if (row) markStep(row, m.isError ? 'error' : 'ok', m.content, { name: m.name });
+    }
+  }
+  turns.forEach((t, i) => addTurnTools(t, i === turns.length - 1));
   updateModelButton();
   scrollToBottom(false);
 }
 
-function renderContent(contentEl, msg) {
-  if (msg.error) {
-    contentEl.innerHTML = `${icon('exclamation-triangle', 'err-icon')}<div class="err-text"></div>`;
-    contentEl.querySelector('.err-text').textContent = msg.content.replace(/^⚠️\s*/, '');
-  } else {
-    contentEl.innerHTML = renderMarkdown(msg.content);
-  }
-}
-
-function appendMessage(msg, index, { streaming = false } = {}) {
+function appendUser(msg) {
   els.welcome.classList.add('hidden');
   const el = document.createElement('div');
-  el.className = `msg ${msg.role}${msg.error ? ' error' : ''}`;
-
-  if (msg.role === 'user') {
-    const col = document.createElement('div');
-    col.className = 'user-col';
-    for (const tag of msg.tags || []) {
-      const t = document.createElement('div');
-      t.className = 'ctx-tag';
-      // compatível com conversas antigas (tags como string)
-      const data = typeof tag === 'string' ? { icon: 'paper-clip', text: tag } : tag;
-      t.innerHTML = `${icon(data.icon)}<span></span>`;
-      t.querySelector('span').textContent = data.text;
-      col.appendChild(t);
-    }
-    const bubble = document.createElement('div');
-    bubble.className = 'bubble';
-    bubble.textContent = msg.content;
-    col.appendChild(bubble);
-    el.appendChild(col);
-  } else {
-    if (msg.model) {
-      const meta = document.createElement('div');
-      meta.className = 'meta';
-      meta.innerHTML = `<span class="avatar">${icon('sparkles')}</span><b></b><span class="prov"></span>`;
-      meta.querySelector('b').textContent = msg.model;
-      meta.querySelector('.prov').textContent = displayName(msg.provider, state.settings.providers[msg.provider]);
-      el.appendChild(meta);
-    }
-    const content = document.createElement('div');
-    content.className = 'content' + (streaming ? ' cursor thinking' : '');
-    if (streaming) content.innerHTML = '<span class="dots"><i></i><i></i><i></i></span>';
-    else renderContent(content, msg);
-    el.appendChild(content);
-    if (!streaming && index >= 0) addMessageTools(el, msg, index);
+  el.className = 'msg user';
+  const col = document.createElement('div');
+  col.className = 'user-col';
+  for (const tag of msg.tags || []) {
+    const t = document.createElement('div');
+    t.className = 'ctx-tag';
+    // compatível com conversas antigas (tags como string)
+    const data = typeof tag === 'string' ? { icon: 'paper-clip', text: tag } : tag;
+    t.innerHTML = `${icon(data.icon)}<span></span>`;
+    t.querySelector('span').textContent = data.text;
+    col.appendChild(t);
   }
-
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble';
+  bubble.textContent = msg.content;
+  col.appendChild(bubble);
+  el.appendChild(col);
   els.messages.appendChild(el);
-  if (streaming) scrollToBottom();
   return el;
+}
+
+/** Cria o bloco de resposta do assistente (cabeçalho + corpo). */
+function startTurn(provider, model) {
+  els.welcome.classList.add('hidden');
+  const el = document.createElement('div');
+  el.className = 'msg assistant';
+  if (model) {
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    meta.innerHTML = `<span class="avatar">${icon('sparkles')}</span><b></b><span class="prov"></span>`;
+    meta.querySelector('b').textContent = model;
+    meta.querySelector('.prov').textContent = displayName(provider, state.settings.providers[provider]);
+    el.appendChild(meta);
+  }
+  const body = document.createElement('div');
+  body.className = 'turn-body';
+  el.appendChild(body);
+  els.messages.appendChild(el);
+  scrollToBottom();
+  return { el, body };
+}
+
+function addTextBlock(turn, { thinking = false } = {}) {
+  const block = document.createElement('div');
+  block.className = `content${thinking ? ' thinking' : ''}`;
+  if (thinking) block.innerHTML = '<span class="dots"><i></i><i></i><i></i></span>';
+  turn.body.appendChild(block);
+  return block;
+}
+
+function finishTextBlock(block, text) {
+  block.classList.remove('thinking', 'cursor');
+  if (!text) {
+    block.remove();
+    return;
+  }
+  block.innerHTML = renderMarkdown(text);
+}
+
+function addErrorBlock(turn, message) {
+  const block = document.createElement('div');
+  block.className = 'content err';
+  block.innerHTML = `${icon('exclamation-triangle', 'err-icon')}<div class="err-text"></div>`;
+  block.querySelector('.err-text').textContent = String(message).replace(/^⚠️\s*/, '');
+  turn.body.appendChild(block);
+}
+
+function addNotice(turn, text) {
+  const n = document.createElement('div');
+  n.className = 'notice';
+  n.textContent = text;
+  turn.body.appendChild(n);
+}
+
+function addStep(turn, call) {
+  let group = turn.body.lastElementChild;
+  if (!group?.classList.contains('steps')) {
+    group = document.createElement('div');
+    group.className = 'steps';
+    turn.body.appendChild(group);
+  }
+  const { icon: ic, label } = describeToolCall(call);
+  const row = document.createElement('details');
+  row.className = 'step running';
+  row.dataset.call = call.id || '';
+  row.innerHTML = `<summary>${icon(ic, 'step-icon')}<span class="step-label"></span><span class="step-status"><span class="spinner"></span></span></summary><pre class="step-out"></pre>`;
+  row.querySelector('.step-label').textContent = label;
+  group.appendChild(row);
+  scrollToBottom();
+  return row;
+}
+
+function markStep(row, status, output, call) {
+  row.classList.remove('running');
+  row.classList.add(status);
+  const st = row.querySelector('.step-status');
+  st.innerHTML = status === 'ok' ? icon('check') : status === 'cancel' ? icon('x-mark') : icon('exclamation-triangle');
+  const out = String(output || '');
+  row.querySelector('.step-out').textContent = out.length > 2500 ? `${out.slice(0, 2500)}\n…` : out;
+  if (call?.name === 'click' && status === 'ok') {
+    const name = out.match(/^Clicado: \[\d+\] [^"\n]*"([^"\n]+)"/);
+    if (name) row.querySelector('.step-label').textContent = `Clicando em “${name[1].slice(0, 48)}”`;
+  }
 }
 
 function toolButton(iconName, label, onClick) {
@@ -570,18 +737,19 @@ function toolButton(iconName, label, onClick) {
   return b;
 }
 
-function addMessageTools(el, msg, index) {
-  if (el.querySelector('.msg-tools') || msg.error && index < 0) return;
+function addTurnTools(turn, isLast) {
+  turn.el.querySelector('.msg-tools')?.remove();
   const tools = document.createElement('div');
   tools.className = 'msg-tools';
-  if (!msg.error) {
-    const copy = toolButton('clipboard-document', 'Copiar resposta', () => copyText(msg.content, copy, true));
+  const text = [...turn.body.querySelectorAll(':scope > .content:not(.err):not(.thinking)')].map((n) => n.innerText.trim()).filter(Boolean).join('\n\n');
+  if (text) {
+    const copy = toolButton('clipboard-document', 'Copiar resposta', () => copyText(text, copy, true));
     tools.appendChild(copy);
   }
-  if (index === state.conversation.messages.length - 1) {
+  if (isLast && state.conversation.messages.some((m) => m.role === 'user')) {
     tools.appendChild(toolButton('arrow-path', 'Gerar novamente com o modelo selecionado', regenerate));
   }
-  if (tools.children.length) el.appendChild(tools);
+  if (tools.children.length) turn.el.appendChild(tools);
 }
 
 function nearBottom() {

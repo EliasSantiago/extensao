@@ -11,6 +11,7 @@ direto do navegador, escolhendo o modelo a cada mensagem e usando a página aber
 
 ## Funcionalidades
 
+- 🤖 **Modo agente (navegação)**: a IA controla a aba do Chrome — abre sites, pesquisa no Google, lê a página, clica, digita, escolhe opções, rola e troca de abas — até concluir a tarefa (ex.: “entre na Shein e busque camisas masculinas premium com material elogiado”). Cada ação aparece no chat e pode ser expandida; a aba controlada ganha um contorno branco. Pede confirmação antes de compras, pagamentos, envios e logins.
 - 💬 Chat em **painel lateral** com respostas em tempo real (streaming), botão de parar e **regenerar**.
 - 🔀 **Seletor de modelo** com busca e teclado, agrupado por provedor (nuvem/local); troque de modelo no meio da conversa.
 - 🔎 **Buscar modelos** direto da API de cada provedor, ou digitar nomes manualmente.
@@ -65,6 +66,8 @@ LocalAI `CORS=true`, llama.cpp server já libera por padrão) ou coloque um prox
 - Clique no ícone da extensão ou pressione **Ctrl+Shift+E** para abrir o painel.
 - Escolha o modelo no seletor embaixo da caixa de mensagem (dá para digitar para filtrar e usar ↑/↓/Enter) e escreva (**Enter** envia, **Shift+Enter** quebra linha).
 - Para o modelo ler a aba atual, use os atalhos da tela inicial ou mencione a página na pergunta (ex.: “resuma esta página”, “qual o preço neste site?”). Não funciona em páginas `chrome://` nem na Chrome Web Store.
+- Peça tarefas na web em linguagem natural: “pesquise o preço do iPhone 16 em 3 lojas”, “entre no site X e encontre o telefone de contato”, “abra o primeiro resultado e resuma”. O agente trabalha na aba ativa da janela; clique em ■ para parar a qualquer momento.
+- O modo agente funciona com modelos que suportam *tool calling*: GPT‑4o/4.1/5, Claude, Gemini 2.x e modelos locais como Qwen 2.5/3, Llama 3.1+ e Mistral (Ollama/LM Studio/vLLM). Modelos sem suporte respondem só com texto (o Nexo detecta e avisa). Dá para desligar o modo agente e ajustar o limite de passos nas configurações.
 - Selecione um texto em qualquer site → botão direito → **Nexo** → escolha a ação.
 - **+** inicia nova conversa; o relógio abre o histórico.
 - Passe o mouse sobre uma resposta para **Copiar** ou **Regenerar** (com o modelo selecionado no momento — útil para comparar modelos).
@@ -78,8 +81,8 @@ LocalAI `CORS=true`, llama.cpp server já libera por padrão) ou coloque um prox
 5. Preencha a ficha:
    - Descrição, categoria (*Produtividade*), idioma, ícone 128×128 (`icons/icon128.png`), ao menos **1 captura de tela 1280×800** (ou 640×400).
    - **Privacidade**: declare finalidade única ("chat com modelos de IA escolhidos pelo usuário") e justifique as permissões:
-     - `sidePanel` – exibir o chat; `storage` – salvar configurações e histórico localmente;
-     - `contextMenus` – ações no texto selecionado; `scripting`, `activeTab`, `tabs` – ler a página atual quando o usuário pede;
+     - `sidePanel` – exibir o chat; `storage` e `unlimitedStorage` – salvar configurações e histórico localmente;
+     - `contextMenus` – ações no texto selecionado; `scripting`, `activeTab`, `tabs` – ler a página e executar as ações de navegação (abrir, clicar, digitar) que o usuário pede ao agente;
      - `host_permissions <all_urls>` – ler a página ativa e chamar o endpoint de LLM que o usuário configurar (inclusive servidores locais/on-premise).
    - Informe que dados (texto da página/mensagens) são enviados **somente** ao provedor escolhido pelo usuário e que não há coleta pelo desenvolvedor. É exigida uma **URL de política de privacidade** (pode ser uma página no GitHub Pages ou um arquivo `PRIVACY.md` no repositório).
 6. Escolha a visibilidade (**Público**, **Não listado** ou **Privado/apenas grupo de teste**) e envie para revisão. A análise costuma levar de alguns dias até ~2 semanas; `<all_urls>` pode prolongar a revisão.
@@ -105,6 +108,7 @@ entrada em `PROVIDERS` em [`src/lib/providers.js`](src/lib/providers.js) e o id 
 ## Privacidade e segurança
 
 - Chaves e histórico ficam em `chrome.storage.local` deste perfil do Chrome (não sincronizam).
+- No modo agente, o conteúdo das páginas que o agente abre é enviado ao provedor escolhido. O agente usa a sua sessão do navegador (sites em que você está logado), então acompanhe as ações e use **parar** se algo sair do esperado. Textos das páginas são tratados como dados não confiáveis, e ações sensíveis exigem sua confirmação.
 - O conteúdo da página só é lido quando você usa um atalho de página, menciona a página na pergunta ou usa o menu de contexto.
 - Chamar a API diretamente do navegador expõe a chave a quem tiver acesso ao perfil do Chrome. Em ambientes corporativos,
   prefira um gateway próprio (ex.: LiteLLM) configurado como provedor **OpenAI-compatível**, com chaves por usuário.
