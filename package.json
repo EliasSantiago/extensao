@@ -1,6 +1,6 @@
 {
   "name": "chat-ia-extensao",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "description": "Extensão do Chrome com chat multi-LLM (OpenAI, Claude, Gemini, Ollama, LM Studio, OpenAI-compatível).",

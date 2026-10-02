@@ -5,8 +5,8 @@ import os
 import struct
 import zlib
 
-BG_TOP = (217, 119, 87)     # #D97757
-BG_BOTTOM = (184, 85, 56)   # #B85538
+BG_TOP = (26, 26, 26)       # #1A1A1A (cinza quase preto)
+BG_BOTTOM = (0, 0, 0)       # #000000
 WHITE = (255, 255, 255)
 SS = 4  # supersampling
 
@@ -37,7 +37,7 @@ def sample(u, v):
         # três pontos
         for cx in (0.36, 0.5, 0.64):
             if (u - cx) ** 2 + (v - 0.45) ** 2 <= 0.05 ** 2:
-                return BG_BOTTOM
+                return (0, 0, 0)
         return WHITE
     t = v
     return tuple(round(BG_TOP[i] * (1 - t) + BG_BOTTOM[i] * t) for i in range(3))

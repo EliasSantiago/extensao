@@ -4,6 +4,9 @@ import { renderMarkdown } from '../lib/markdown.js';
 
 const $ = (sel) => document.querySelector(sel);
 
+const AVATAR_SVG =
+  '<svg viewBox="0 0 24 24"><path d="M5 6.5A2.5 2.5 0 0 1 7.5 4h9A2.5 2.5 0 0 1 19 6.5v6a2.5 2.5 0 0 1-2.5 2.5H11l-4 4v-4h0a2 2 0 0 1-2-2z" /></svg>';
+
 const els = {
   messages: $('#messages'),
   welcome: $('#welcome'),
@@ -202,7 +205,7 @@ async function readPage(tabId) {
 function setAttachedContext(ctx) {
   state.attachedContext = ctx;
   if (ctx) {
-    els.chipText.textContent = `📎 ${ctx.label}: “${ctx.text.slice(0, 200)}${ctx.text.length > 200 ? '…' : ''}”`;
+    els.chipText.textContent = `${ctx.label}: “${ctx.text.slice(0, 200)}${ctx.text.length > 200 ? '…' : ''}”`;
     els.chip.classList.remove('hidden');
   } else {
     els.chip.classList.add('hidden');
@@ -259,7 +262,7 @@ async function send({ tabId } = {}) {
       const page = await readPage(tabId);
       const attr = (s) => String(s).replace(/"/g, "'");
       apiParts.push(`<pagina titulo="${attr(page.title)}" url="${attr(page.url)}">\n${page.text}\n</pagina>`);
-      tags.push(`📄 ${page.title || page.url}`);
+      tags.push(`Página · ${page.title || page.url}`);
     } catch (err) {
       showError(err.message);
       return;
@@ -267,7 +270,7 @@ async function send({ tabId } = {}) {
   }
   if (ctx) {
     apiParts.push(`<selecao${ctx.url ? ` url="${ctx.url}"` : ''}>\n${ctx.text}\n</selecao>`);
-    tags.push(`📎 ${ctx.text.slice(0, 60)}${ctx.text.length > 60 ? '…' : ''}`);
+    tags.push(`Seleção · ${ctx.text.slice(0, 60)}${ctx.text.length > 60 ? '…' : ''}`);
   }
 
   const userMsg = {
@@ -414,7 +417,14 @@ function appendMessage(msg, index, { streaming = false } = {}) {
     if (msg.model) {
       const meta = document.createElement('div');
       meta.className = 'meta';
-      meta.textContent = `${displayName(msg.provider, state.settings.providers[msg.provider])} · ${msg.model}`;
+      const avatar = document.createElement('span');
+      avatar.className = 'avatar';
+      avatar.innerHTML = AVATAR_SVG;
+      const model = document.createElement('b');
+      model.textContent = msg.model;
+      const provider = document.createElement('span');
+      provider.textContent = displayName(msg.provider, state.settings.providers[msg.provider]);
+      meta.append(avatar, model, provider);
       el.appendChild(meta);
     }
     const content = document.createElement('div');

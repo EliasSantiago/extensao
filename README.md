@@ -18,7 +18,7 @@ direto do navegador, escolhendo o modelo a cada mensagem e usando a página aber
 - 🖱️ **Menu de contexto** (botão direito): resumir, explicar, traduzir, melhorar escrita ou perguntar sobre o texto selecionado; resumir a página.
 - 🗂️ **Histórico** local com busca e exclusão.
 - 🧾 Markdown com blocos de código, tabelas e botão **Copiar**.
-- 🌗 Tema claro/escuro automático. Atalho: **Ctrl+Shift+E** (Mac: **⌘+Shift+E**).
+- 🖤 Visual monocromático (preto, cinza quase preto e branco) com as fontes **Inter** e **JetBrains Mono** (Google Fonts, empacotadas na extensão). Atalho: **Ctrl+Shift+E** (Mac: **⌘+Shift+E**).
 - 🔐 Chaves salvas apenas no navegador (`chrome.storage.local`); não existe servidor intermediário.
 
 O planejamento e a arquitetura estão em [`docs/PLANEJAMENTO.md`](docs/PLANEJAMENTO.md).
@@ -96,6 +96,8 @@ npm run test:e2e    # carrega a extensão no Chromium com um LLM simulado (reque
 npm run icons       # regenera os ícones
 npm run package     # gera o zip para a Web Store
 ```
+
+As cores e fontes ficam em [`src/assets/theme.css`](src/assets/theme.css) (variáveis CSS compartilhadas pelo chat e pelas configurações).
 
 Para adicionar um provedor que já usa um formato suportado (OpenAI, Anthropic, Gemini ou Ollama), basta incluir uma
 entrada em `PROVIDERS` em [`src/lib/providers.js`](src/lib/providers.js) e o id em `PROVIDER_ORDER`.

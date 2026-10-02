@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Chat IA — Multi-LLM",
   "short_name": "Chat IA",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Converse com OpenAI, Claude, Gemini e modelos locais (Ollama, LM Studio, vLLM) em um painel lateral do Chrome.",
   "minimum_chrome_version": "116",
   "icons": {

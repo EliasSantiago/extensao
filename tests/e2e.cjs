@@ -100,6 +100,7 @@ const server = http.createServer((req, res) => {
   await sp.evaluate((tabId) => chrome.storage.session.set({ pendingPrompt: { type: 'page', instruction: 'Resuma esta página.', tabId, createdAt: Date.now() } }), pageRes.id);
   await sp.waitForFunction(() => document.querySelector('.msg.assistant .content')?.textContent.includes('PAGINA_RECEBIDA'), null, { timeout: 10000 });
   await sp.waitForFunction(() => !document.querySelector('#btn-send').classList.contains('busy'));
+  await sp.screenshot({ path: path.join(OUT, 'sidepanel-chat.png') });
   console.log('page flow ok:', await sp.locator('.ctx-tag').first().textContent());
   await sp.screenshot({ path: path.join(OUT, 'sidepanel-chat.png') });
 

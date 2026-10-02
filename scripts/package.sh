@@ -6,5 +6,5 @@ VERSION=$(python3 -c "import json;print(json.load(open('manifest.json'))['versio
 mkdir -p dist
 OUT="dist/chat-ia-${VERSION}.zip"
 rm -f "$OUT"
-zip -r -q "$OUT" manifest.json icons src -x '*.DS_Store'
+zip -r -q "$OUT" manifest.json icons src -x "*.DS_Store"
 echo "Pacote gerado: $OUT"
