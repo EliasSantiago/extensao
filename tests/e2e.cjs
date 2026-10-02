@@ -47,14 +47,18 @@ const server = http.createServer((req, res) => {
   const id = sw.url().split('/')[2];
   console.log('extension id', id);
 
+  // a extensão abre as opções sozinha na instalação; espera essa aba para evitar corrida de navegação
+  const optUrl = `chrome-extension://${id}/src/options/options.html`;
+  for (let i = 0; i < 20 && !ctx.pages().some((p) => p.url() === optUrl); i++) await new Promise((r) => setTimeout(r, 100));
+
   const site = await ctx.newPage();
   await site.goto('http://localhost:8765/page');
 
   // options
-  const opt = await ctx.newPage();
+  const opt = ctx.pages().find((p) => p.url() === optUrl) || (await ctx.newPage());
   opt.on('pageerror', (e) => errors.push('options: ' + e.message));
   opt.on('console', (m) => m.type() === 'error' && errors.push('options console: ' + m.text()));
-  await opt.goto(`chrome-extension://${id}/src/options/options.html`);
+  await opt.goto(optUrl);
   await opt.waitForSelector('.provider');
   console.log('provider cards:', await opt.locator('.provider').count());
   const custom = opt.locator('.provider').nth(5);
@@ -77,9 +81,13 @@ const server = http.createServer((req, res) => {
   sp.on('console', (m) => m.type() === 'error' && errors.push('sidepanel console: ' + m.text()));
   await sp.goto(`chrome-extension://${id}/src/sidepanel/sidepanel.html`);
   await sp.screenshot({ path: path.join(OUT, 'sidepanel-welcome.png') });
-  const options = await sp.$$eval('#model-select option', (o) => o.map((x) => x.value));
-  console.log('model options:', options);
-  await sp.selectOption('#model-select', 'custom::mock-llm');
+  await sp.click('#model-btn');
+  const options = await sp.$$eval('#model-list .menu-item', (o) => o.map((x) => `${x.dataset.provider}::${x.dataset.model}`));
+  console.log('model options:', options.length, options.slice(-2));
+  await sp.fill('#model-search', 'mock');
+  await sp.screenshot({ path: path.join(OUT, 'sidepanel-models.png') });
+  await sp.keyboard.press('Enter');
+  console.log('selected model:', await sp.locator('#model-btn-label').textContent());
   await sp.fill('#input', 'Qual é a capital do Brasil?');
   await sp.keyboard.press('Enter');
   await sp.waitForSelector('.msg.assistant .code-block', { timeout: 10000 });

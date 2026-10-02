@@ -1,13 +1,13 @@
 {
-  "name": "chat-ia-extensao",
-  "version": "1.1.0",
+  "name": "nexo-extensao",
+  "version": "1.2.0",
   "private": true,
   "type": "module",
   "description": "Extensão do Chrome com chat multi-LLM (OpenAI, Claude, Gemini, Ollama, LM Studio, OpenAI-compatível).",
   "scripts": {
     "test": "node --test tests/*.test.mjs",
     "test:e2e": "node tests/e2e.cjs",
-    "icons": "python3 scripts/make_icons.py",
+    "icons": "node scripts/make_icons.cjs",
     "package": "bash scripts/package.sh"
   }
 }

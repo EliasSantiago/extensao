@@ -1,10 +1,12 @@
 import { PROVIDERS, PROVIDER_ORDER, listModels, streamChat, modelsFor } from '../lib/providers.js';
 import { getSettings, saveSettings, clearConversations, DEFAULT_SETTINGS } from '../lib/storage.js';
+import { icon, hydrateIcons } from '../lib/icons.js';
 
 const $ = (sel) => document.querySelector(sel);
 let settings;
 const cards = {};
 
+hydrateIcons();
 init();
 
 async function init() {
@@ -46,13 +48,15 @@ function renderProviders() {
     const cfg = settings.providers[id];
     const node = tpl.content.firstElementChild.cloneNode(true);
     const f = (name) => node.querySelector(`[data-f="${name}"]`);
+    hydrateIcons(node);
 
+    node.querySelector('[data-p-icon]').innerHTML = icon(p.location === 'onprem' ? 'server-stack' : 'cloud');
     node.querySelector('[data-name]').textContent = p.name;
     node.querySelector('[data-help]').textContent = p.help;
     const link = node.querySelector('[data-link]');
     if (p.keyUrl) {
       link.href = p.keyUrl;
-      link.textContent = p.needsKey ? 'obter chave ↗' : 'site ↗';
+      link.innerHTML = `${p.needsKey ? 'Obter chave de API' : 'Site oficial'}${icon('arrow-top-right-on-square')}`;
     } else link.remove();
 
     if (id !== 'custom') node.querySelector('[data-label-field]').remove();
@@ -71,16 +75,18 @@ function renderProviders() {
     syncDisabled();
 
     const keyBtn = node.querySelector('[data-toggle-key]');
+    keyBtn.innerHTML = icon('eye');
     keyBtn.addEventListener('click', () => {
       const show = f('apiKey').type === 'password';
       f('apiKey').type = show ? 'text' : 'password';
-      keyBtn.textContent = show ? 'ocultar' : 'mostrar';
+      keyBtn.innerHTML = icon(show ? 'eye-slash' : 'eye');
+      keyBtn.title = show ? 'Ocultar chave' : 'Mostrar chave';
     });
 
     const result = node.querySelector('[data-result]');
     const report = (msg, ok) => {
       result.textContent = msg;
-      result.className = `small ${ok ? 'ok' : 'err'}`;
+      result.className = `small result ${ok ? 'ok' : 'err'}`;
     };
 
     node.querySelector('[data-fetch]').addEventListener('click', async (e) => {
@@ -174,7 +180,7 @@ function exportSettings() {
   const blob = new Blob([JSON.stringify(copy, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = 'chat-ia-config.json';
+  a.download = 'nexo-config.json';
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }

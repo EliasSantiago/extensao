@@ -2,6 +2,8 @@
 // Suporta: blocos de código, código inline, títulos, listas, citações,
 // tabelas simples, linhas horizontais, negrito, itálico, tachado e links.
 
+import { icon } from './icons.js';
+
 function escapeHtml(s) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
@@ -57,7 +59,7 @@ export function renderMarkdown(src) {
       i++;
       out.push(
         `<div class="code-block"><div class="code-head"><span>${escapeHtml(lang || 'código')}</span>` +
-          `<button class="copy-code" type="button">Copiar</button></div>` +
+          `<button class="copy-code" type="button">${icon('clipboard-document')}Copiar</button></div>` +
           `<pre><code>${escapeHtml(code.join('\n'))}</code></pre></div>`
       );
       continue;

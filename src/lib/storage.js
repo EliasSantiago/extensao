@@ -20,7 +20,7 @@ export const DEFAULT_SETTINGS = {
   ),
   selected: { provider: 'anthropic', model: 'claude-sonnet-5-5' },
   systemPrompt:
-    'Você é um assistente útil integrado ao navegador do usuário. Responda em português do Brasil, ' +
+    'Você é o Nexo, um assistente útil integrado ao navegador do usuário. Responda em português do Brasil, ' +
     'de forma clara e objetiva, usando Markdown quando ajudar. Quando receber o conteúdo de uma página, ' +
     'baseie-se nele e diga quando a informação não estiver presente.',
   temperature: null,

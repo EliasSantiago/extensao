@@ -1,7 +1,7 @@
 // Service worker: abre o painel lateral, cria menus de contexto e repassa
 // pedidos (seleção / página) para o painel via chrome.storage.session.
 
-const MENU_ROOT = 'chat-ia';
+const MENU_ROOT = 'nexo';
 
 const SELECTION_ACTIONS = {
   'ask-selection': { title: 'Perguntar sobre a seleção', prompt: '' },
@@ -15,7 +15,7 @@ chrome.runtime.onInstalled.addListener(async (details) => {
   await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(console.error);
 
   chrome.contextMenus.removeAll(() => {
-    chrome.contextMenus.create({ id: MENU_ROOT, title: 'Chat IA', contexts: ['selection', 'page'] });
+    chrome.contextMenus.create({ id: MENU_ROOT, title: 'Nexo', contexts: ['selection', 'page'] });
     for (const [id, action] of Object.entries(SELECTION_ACTIONS)) {
       chrome.contextMenus.create({ id, parentId: MENU_ROOT, title: action.title, contexts: ['selection'] });
     }

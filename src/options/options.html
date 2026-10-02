@@ -3,28 +3,28 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Chat IA — Configurações</title>
+    <title>Nexo — Configurações</title>
     <link rel="stylesheet" href="../assets/theme.css" />
     <link rel="stylesheet" href="options.css" />
   </head>
   <body>
     <header class="page-head">
-      <span class="logo" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 6.5A2.5 2.5 0 0 1 7.5 4h9A2.5 2.5 0 0 1 19 6.5v6a2.5 2.5 0 0 1-2.5 2.5H11l-4 4v-4h0a2 2 0 0 1-2-2z" /></svg></span>
+      <span class="logo" aria-hidden="true"><i data-icon="cube-transparent"></i></span>
       <div>
-        <h1>Chat IA — Configurações</h1>
-        <p class="muted">As chaves ficam salvas apenas neste navegador (<code>chrome.storage.local</code>) e são enviadas somente ao provedor correspondente.</p>
+        <h1>Configurações do Nexo</h1>
+        <p class="muted">As chaves ficam salvas apenas neste navegador e são enviadas somente ao provedor correspondente.</p>
       </div>
     </header>
 
     <main>
       <section>
-        <h2>Provedores na nuvem</h2>
+        <h2><i data-icon="cloud"></i>Provedores na nuvem</h2>
         <div id="cloud-providers" class="grid"></div>
       </section>
 
       <section>
-        <h2>Provedores on-premise / locais</h2>
-        <p class="muted small">
+        <h2><i data-icon="server-stack"></i>Provedores on-premise / locais</h2>
+        <p class="muted small note">
           Modelos rodando na sua máquina ou na rede da empresa. O servidor precisa aceitar requisições da origem
           <code>chrome-extension://<span id="ext-id"></span></code> (CORS).
         </p>
@@ -32,7 +32,7 @@
       </section>
 
       <section>
-        <h2>Comportamento</h2>
+        <h2><i data-icon="sparkles"></i>Comportamento</h2>
         <div class="card">
           <label class="field">
             <span>Prompt de sistema</span>
@@ -40,74 +40,78 @@
           </label>
           <div class="row">
             <label class="field">
-              <span>Temperatura <small class="muted">(vazio = padrão do modelo)</small></span>
-              <input id="temperature" type="number" min="0" max="2" step="0.1" placeholder="padrão" />
+              <span>Temperatura <small>vazio = padrão do modelo</small></span>
+              <input id="temperature" type="number" min="0" max="2" step="0.1" placeholder="Padrão" />
             </label>
             <label class="field">
-              <span>Máx. tokens da resposta <small class="muted">(vazio = padrão)</small></span>
-              <input id="maxTokens" type="number" min="1" step="1" placeholder="padrão" />
+              <span>Máx. tokens da resposta <small>vazio = padrão</small></span>
+              <input id="maxTokens" type="number" min="1" step="1" placeholder="Padrão" />
             </label>
             <label class="field">
               <span>Limite de caracteres da página</span>
               <input id="pageCharLimit" type="number" min="1000" step="1000" />
             </label>
           </div>
-          <label class="check">
-            <input id="sendWithEnter" type="checkbox" />
+          <label class="switch-row">
+            <span class="switch"><input id="sendWithEnter" type="checkbox" /><span></span></span>
             Enviar com Enter (Shift+Enter para nova linha)
           </label>
         </div>
       </section>
 
       <section>
-        <h2>Dados</h2>
+        <h2><i data-icon="key"></i>Dados</h2>
         <div class="card row-actions">
-          <button id="btn-export" class="btn">Exportar configurações (sem chaves)</button>
-          <button id="btn-clear-history" class="btn danger">Apagar todo o histórico</button>
-          <button id="btn-reset" class="btn danger">Restaurar padrões</button>
+          <button id="btn-export" class="btn"><i data-icon="arrow-top-right-on-square"></i>Exportar configurações (sem chaves)</button>
+          <button id="btn-clear-history" class="btn danger"><i data-icon="trash"></i>Apagar todo o histórico</button>
+          <button id="btn-reset" class="btn danger"><i data-icon="arrow-path"></i>Restaurar padrões</button>
         </div>
       </section>
     </main>
 
     <div class="savebar">
       <span id="status" class="muted"></span>
-      <button id="btn-save" class="btn primary">Salvar</button>
+      <button id="btn-save" class="btn primary"><i data-icon="check"></i>Salvar</button>
     </div>
 
     <template id="provider-tpl">
       <div class="card provider">
         <div class="provider-head">
-          <label class="check">
-            <input type="checkbox" data-f="enabled" />
+          <span class="p-icon" data-p-icon></span>
+          <div class="p-title">
             <strong data-name></strong>
+            <a data-link target="_blank" rel="noopener"></a>
+          </div>
+          <label class="switch" title="Mostrar este provedor no chat">
+            <input type="checkbox" data-f="enabled" />
+            <span></span>
           </label>
-          <a data-link target="_blank" rel="noopener" class="small">obter</a>
         </div>
         <p class="muted small" data-help></p>
         <label class="field" data-label-field>
           <span>Nome exibido</span>
           <input type="text" data-f="label" placeholder="Ex.: vLLM da empresa" />
         </label>
-        <label class="field">
+        <div class="field">
           <span data-key-label>Chave de API</span>
           <div class="pw">
-            <input type="password" data-f="apiKey" autocomplete="off" spellcheck="false" />
-            <button type="button" class="btn ghost" data-toggle-key>mostrar</button>
+            <input type="password" data-f="apiKey" autocomplete="off" spellcheck="false" placeholder="Cole sua chave aqui" />
+            <button type="button" class="pw-toggle" data-toggle-key title="Mostrar chave" aria-label="Mostrar chave"></button>
           </div>
-        </label>
+        </div>
         <label class="field">
           <span>URL base</span>
           <input type="url" data-f="baseUrl" spellcheck="false" />
         </label>
         <label class="field">
-          <span>Modelos <small class="muted">(um por linha; vazio = lista padrão)</small></span>
+          <span>Modelos <small>um por linha · vazio = lista padrão</small></span>
           <textarea data-f="models" rows="4" spellcheck="false"></textarea>
         </label>
         <div class="row-actions">
-          <button type="button" class="btn" data-fetch>Buscar modelos</button>
-          <button type="button" class="btn" data-test>Testar conexão</button>
-          <span class="small" data-result></span>
+          <button type="button" class="btn" data-fetch><i data-icon="magnifying-glass"></i>Buscar modelos</button>
+          <button type="button" class="btn" data-test><i data-icon="link"></i>Testar conexão</button>
         </div>
+        <p class="small result" data-result></p>
       </div>
     </template>
 

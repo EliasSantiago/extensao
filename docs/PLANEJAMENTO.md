@@ -1,4 +1,4 @@
-# Planejamento — Extensão "Chat IA" para Google Chrome
+# Planejamento — Extensão "Nexo" para Google Chrome
 
 ## Objetivo
 
@@ -14,7 +14,7 @@ sem sair da página, podendo usar o **conteúdo da página** ou o **texto seleci
 | 2 | Escolher o modelo | Seletor agrupado por provedor no topo do painel; modelos listados automaticamente via API ou digitados manualmente |
 | 3 | Provedores em nuvem | OpenAI, Anthropic (Claude), Google Gemini |
 | 4 | Provedores on-premise | Ollama, LM Studio, e qualquer servidor compatível com a API da OpenAI (vLLM, LocalAI, llama.cpp server, TGI, Open WebUI, LiteLLM…) |
-| 5 | Usar a página como contexto | Botão "Usar página" lê título, URL e texto da aba ativa (`chrome.scripting`) |
+| 5 | Usar a página como contexto | Atalhos de página e perguntas que mencionam "esta página/site/aba" leem título, URL e texto da aba ativa (`chrome.scripting`) |
 | 6 | Menu de contexto | Botão direito → Resumir / Explicar / Traduzir / Perguntar sobre a seleção; Resumir a página |
 | 7 | Histórico | Conversas salvas localmente (`chrome.storage.local`), com lista, reabrir e excluir |
 | 8 | Respostas em tempo real | Streaming (SSE / NDJSON) com botão de parar |

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Chat IA — Multi-LLM",
-  "short_name": "Chat IA",
-  "version": "1.1.0",
+  "name": "Nexo — Assistente de IA multi-modelo",
+  "short_name": "Nexo",
+  "version": "1.2.0",
   "description": "Converse com OpenAI, Claude, Gemini e modelos locais (Ollama, LM Studio, vLLM) em um painel lateral do Chrome.",
   "minimum_chrome_version": "116",
   "icons": {
@@ -12,7 +12,7 @@
     "128": "icons/icon128.png"
   },
   "action": {
-    "default_title": "Abrir Chat IA",
+    "default_title": "Abrir o Nexo",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",
@@ -35,7 +35,7 @@
         "default": "Ctrl+Shift+E",
         "mac": "Command+Shift+E"
       },
-      "description": "Abrir o Chat IA"
+      "description": "Abrir o Nexo"
     }
   }
 }

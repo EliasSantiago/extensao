@@ -1,4 +1,4 @@
-# Chat IA — extensão multi-LLM para o Google Chrome
+# Nexo — assistente de IA multi-modelo para o Google Chrome
 
 Painel lateral de chat no estilo da extensão do Claude, para conversar com **vários provedores de LLM**
 direto do navegador, escolhendo o modelo a cada mensagem e usando a página aberta como contexto.
@@ -12,13 +12,13 @@ direto do navegador, escolhendo o modelo a cada mensagem e usando a página aber
 ## Funcionalidades
 
 - 💬 Chat em **painel lateral** com respostas em tempo real (streaming), botão de parar e **regenerar**.
-- 🔀 **Seletor de modelo** agrupado por provedor; troque de modelo no meio da conversa.
+- 🔀 **Seletor de modelo** com busca e teclado, agrupado por provedor (nuvem/local); troque de modelo no meio da conversa.
 - 🔎 **Buscar modelos** direto da API de cada provedor, ou digitar nomes manualmente.
-- 📄 **Usar página**: envia título, URL e texto da aba atual como contexto.
+- 📄 **Contexto da página**: atalhos (Resumir, Pontos-chave, Traduzir) ou perguntas que mencionem “esta página”, “neste site”, “nesta aba”… enviam título, URL e texto da aba atual.
 - 🖱️ **Menu de contexto** (botão direito): resumir, explicar, traduzir, melhorar escrita ou perguntar sobre o texto selecionado; resumir a página.
 - 🗂️ **Histórico** local com busca e exclusão.
 - 🧾 Markdown com blocos de código, tabelas e botão **Copiar**.
-- 🖤 Visual monocromático (preto, cinza quase preto e branco) com as fontes **Inter** e **JetBrains Mono** (Google Fonts, empacotadas na extensão). Atalho: **Ctrl+Shift+E** (Mac: **⌘+Shift+E**).
+- 🧊 Ícones [Heroicons](https://heroicons.com) (MIT) e visual monocromático (preto, cinza quase preto e branco) com as fontes **Inter** e **JetBrains Mono** (Google Fonts, empacotadas na extensão). Atalho: **Ctrl+Shift+E** (Mac: **⌘+Shift+E**).
 - 🔐 Chaves salvas apenas no navegador (`chrome.storage.local`); não existe servidor intermediário.
 
 O planejamento e a arquitetura estão em [`docs/PLANEJAMENTO.md`](docs/PLANEJAMENTO.md).
@@ -31,7 +31,7 @@ O planejamento e a arquitetura estão em [`docs/PLANEJAMENTO.md`](docs/PLANEJAME
 2. No Chrome, abra `chrome://extensions`.
 3. Ative **Modo do desenvolvedor** (canto superior direito).
 4. Clique em **Carregar sem compactação** e selecione a pasta do projeto (a que contém o `manifest.json`).
-5. Fixe a extensão na barra (ícone de quebra-cabeça → alfinete em **Chat IA**).
+5. Fixe a extensão na barra (ícone de quebra-cabeça → alfinete em **Nexo**).
 
 A página de configurações abre automaticamente na primeira instalação.
 Após alterar o código, clique em **↻ Recarregar** no card da extensão em `chrome://extensions`.
@@ -63,16 +63,16 @@ LocalAI `CORS=true`, llama.cpp server já libera por padrão) ou coloque um prox
 ## 3. Usar
 
 - Clique no ícone da extensão ou pressione **Ctrl+Shift+E** para abrir o painel.
-- Escolha o modelo no seletor ao lado de **Usar página** e digite a mensagem (**Enter** envia, **Shift+Enter** quebra linha).
-- Marque **Usar página** para que o modelo leia a aba atual (não funciona em páginas `chrome://` nem na Chrome Web Store).
-- Selecione um texto em qualquer site → botão direito → **Chat IA** → escolha a ação.
+- Escolha o modelo no seletor embaixo da caixa de mensagem (dá para digitar para filtrar e usar ↑/↓/Enter) e escreva (**Enter** envia, **Shift+Enter** quebra linha).
+- Para o modelo ler a aba atual, use os atalhos da tela inicial ou mencione a página na pergunta (ex.: “resuma esta página”, “qual o preço neste site?”). Não funciona em páginas `chrome://` nem na Chrome Web Store.
+- Selecione um texto em qualquer site → botão direito → **Nexo** → escolha a ação.
 - **+** inicia nova conversa; o relógio abre o histórico.
 - Passe o mouse sobre uma resposta para **Copiar** ou **Regenerar** (com o modelo selecionado no momento — útil para comparar modelos).
 
 ## 4. Publicar na Chrome Web Store
 
 1. Atualize `version` em `manifest.json` (cada envio precisa de uma versão maior).
-2. Gere o pacote: `npm run package` (ou `bash scripts/package.sh`) → `dist/chat-ia-<versão>.zip`.
+2. Gere o pacote: `npm run package` (ou `bash scripts/package.sh`) → `dist/nexo-<versão>.zip`.
 3. Crie uma conta em [Chrome Web Store Developer Dashboard](https://chrome.google.com/webstore/devconsole) (taxa única de US$ 5) e ative a verificação em duas etapas da conta Google.
 4. **Novo item** → envie o `.zip`.
 5. Preencha a ficha:
@@ -105,6 +105,6 @@ entrada em `PROVIDERS` em [`src/lib/providers.js`](src/lib/providers.js) e o id 
 ## Privacidade e segurança
 
 - Chaves e histórico ficam em `chrome.storage.local` deste perfil do Chrome (não sincronizam).
-- O conteúdo da página só é lido quando **Usar página** está marcado ou uma ação do menu de contexto é usada.
+- O conteúdo da página só é lido quando você usa um atalho de página, menciona a página na pergunta ou usa o menu de contexto.
 - Chamar a API diretamente do navegador expõe a chave a quem tiver acesso ao perfil do Chrome. Em ambientes corporativos,
   prefira um gateway próprio (ex.: LiteLLM) configurado como provedor **OpenAI-compatível**, com chaves por usuário.
